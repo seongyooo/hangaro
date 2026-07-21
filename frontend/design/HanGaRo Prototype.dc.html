@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style id="hangaro-style">
+    @keyframes pulseRing { 0% { transform: scale(0.6); opacity: 0.7; } 70% { opacity: 0.15; } 100% { transform: scale(2.6); opacity: 0; } }
+    @keyframes rippleWave { 0% { transform: scale(0.7); opacity: 0.55; } 100% { transform: scale(2.8); opacity: 0; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+    a { color: #22c55e; text-decoration: none; }
+    a:hover { color: #16a34a; }
+    ::-webkit-scrollbar { width: 0px; height: 0px; }
+  </style>
+</helmet>
+
+<div style="min-height:100vh;background:{{ outerBg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px 16px;box-sizing:border-box">
+
+  <div style="display:flex;gap:8px;align-items:center">
+    <sc-for list="{{ navTabs }}" as="tab" hint-placeholder-count="3">
+      <div onClick="{{ tab.onClick }}" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.2px;background:{{ tab.bg }};color:{{ tab.fg }}">{{ tab.label }}</div>
+    </sc-for>
+    <div onClick="{{ toggleDark }}" style="margin-left:8px;padding:7px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;background:{{ theme.surface }};color:{{ theme.text }};border:1px solid {{ theme.border }}">{{ darkToggleLabel }}</div>
+  </div>
+
+  <div style="width:{{ scaledW }}px;height:{{ scaledH }}px;">
+  <div style="width:393px;height:852px;transform:scale({{ scale }});transform-origin:top left;border-radius:36px;overflow:hidden;position:relative;background:{{ theme.bg }};box-shadow:0 30px 70px -20px rgba(0,0,0,0.5);border:1px solid rgba(0,0,0,0.06);">
+
+    <!-- ===== SCREEN 1: MAIN MAP ===== -->
+    <sc-if value="{{ isScreen1 }}" hint-placeholder-val="{{ true }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="position:absolute;inset:0;overflow:hidden;background:{{ theme.mapBg }}">
+          <div style="position:absolute;inset:0;background-image:repeating-linear-gradient({{ theme.mapGrid }} 0 1px, transparent 1px 64px), repeating-linear-gradient(90deg, {{ theme.mapGrid }} 0 1px, transparent 1px 64px)"></div>
+          <sc-for list="{{ mapBlocks }}" as="blk" hint-placeholder-count="10">
+            <div style="position:absolute;left:{{ blk.x }}%;top:{{ blk.y }}%;width:{{ blk.w }}px;height:{{ blk.h }}px;background:{{ theme.mapBlock }};border-radius:4px"></div>
+          </sc-for>
+          <div style="position:absolute;left:44%;top:62%;width:14px;height:14px;transform:translate(-50%,-50%)">
+            <div style="position:absolute;inset:-14px;border-radius:50%;border:2px solid #3b82f6;animation:rippleWave 2s ease-out infinite"></div>
+            <div style="position:absolute;inset:0;border-radius:50%;background:#3b82f6;border:2px solid white"></div>
+          </div>
+          <sc-for list="{{ nodesIdle }}" as="node" hint-placeholder-count="6">
+            <div style="position:absolute;left:{{ node.x }}%;top:{{ node.y }}%;transform:translate(-50%,-50%);cursor:pointer" onClick="{{ node.onClick }}">
+              <div style="position:absolute;inset:-16px;border-radius:50%;border:2px solid {{ node.color }};animation:pulseRing {{ node.pulseDur }} ease-out infinite"></div>
+              <div style="width:14px;height:14px;border-radius:50%;background:{{ node.color }};border:2px solid {{ theme.bg }};box-shadow:0 1px 4px rgba(0,0,0,.25)"></div>
+              <sc-if value="{{ node.showTip }}">
+                <div style="position:absolute;bottom:22px;left:50%;transform:translateX(-50%);background:{{ theme.surface }};color:{{ theme.text }};padding:6px 10px;border-radius:8px;font-size:11px;font-weight:600;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.18);display:flex;flex-direction:column;align-items:center;gap:2px">
+                  <div>{{ node.name }}</div>
+                  <div style="font-size:10px;font-weight:500;color:{{ node.color }}">{{ node.levelLabel }}</div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="position:relative;display:flex;align-items:center;justify-content:space-between;padding:18px 18px 14px;backdrop-filter:blur(14px);background:{{ theme.headerGlass }}">
+          <div style="font-size:20px;font-weight:800;color:{{ theme.text }};letter-spacing:-.3px">HanGaRo</div>
+          <div onClick="{{ toggleDark }}" style="width:36px;height:36px;border-radius:50%;background:{{ theme.surface }};display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px">{{ modeIcon }}</div>
+        </div>
+
+        <div style="position:absolute;left:0;right:0;bottom:0;height:{{ sheetHeightPx }}px;background:{{ theme.surface }};border-radius:22px 22px 0 0;box-shadow:0 -14px 32px rgba(0,0,0,.22);display:flex;flex-direction:column;touch-action:none">
+          <div onPointerDown="{{ onSheetPointerDown }}" style="padding:10px 0 6px;display:flex;justify-content:center;cursor:grab">
+            <div style="width:38px;height:4px;border-radius:3px;background:{{ theme.border }}"></div>
+          </div>
+          <div style="padding:2px 18px 20px;overflow:hidden;display:flex;flex-direction:column;gap:14px;flex:1">
+            <div style="display:flex;gap:8px">
+              <sc-for list="{{ transportModes }}" as="tm" hint-placeholder-count="3">
+                <div onClick="{{ tm.onClick }}" style="flex:1;text-align:center;padding:10px 0;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;background:{{ tm.bg }};color:{{ tm.fg }}">{{ tm.label }}</div>
+              </sc-for>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:10px;background:{{ theme.bg }};border:1px solid {{ theme.border }};border-radius:12px;padding:12px 14px">
+              <span style="font-size:15px">📍</span>
+              <input value="{{ destination }}" onChange="{{ onDestinationChange }}" placeholder="Enter your destination" style="flex:1;border:none;outline:none;background:transparent;font-size:14px;color:{{ theme.text }}"></input>
+              <sc-if value="{{ destination }}"><span onClick="{{ clearDestination }}" style="cursor:pointer;color:{{ theme.subtext }};font-size:13px">✕</span></sc-if>
+            </div>
+
+            <sc-for list="{{ waypointsScreen1 }}" as="wp" hint-placeholder-count="0">
+              <div style="display:flex;align-items:center;gap:10px;background:{{ theme.bg }};border:1px solid {{ theme.border }};border-radius:12px;padding:11px 14px">
+                <span style="font-size:14px;color:#3b82f6">🔵</span>
+                <span style="flex:1;font-size:14px;color:{{ theme.text }}">{{ wp.name }}</span>
+                <span onClick="{{ wp.onRemove }}" style="cursor:pointer;color:{{ theme.subtext }};font-size:13px">✕</span>
+              </div>
+            </sc-for>
+
+            <div onClick="{{ addWaypoint }}" style="display:flex;align-items:center;gap:6px;color:{{ theme.primary }};font-size:13px;font-weight:600;cursor:pointer;width:fit-content">
+              <span>＋</span><span>Add waypoint</span>
+            </div>
+
+            <div onClick="{{ startSearch }}" style-hover="opacity:0.9" style="margin-top:auto;background:{{ theme.primary }};color:white;text-align:center;padding:15px 0;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">{{ ctaLabel }}</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ===== SCREEN 2: SEARCHING ===== -->
+    <sc-if value="{{ isScreen2 }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="position:absolute;inset:0;overflow:hidden;background:{{ theme.mapBg }}">
+          <div style="position:absolute;inset:0;background-image:repeating-linear-gradient({{ theme.mapGrid }} 0 1px, transparent 1px 64px), repeating-linear-gradient(90deg, {{ theme.mapGrid }} 0 1px, transparent 1px 64px)"></div>
+          <svg style="position:absolute;inset:0;width:100%;height:100%">
+            <sc-for list="{{ searchEdges }}" as="edge" hint-placeholder-count="5">
+              <line x1="{{ edge.x1 }}%" y1="{{ edge.y1 }}%" x2="{{ edge.x2 }}%" y2="{{ edge.y2 }}%" stroke="{{ edge.color }}" stroke-width="3" stroke-linecap="round" stroke-dasharray="7 7" stroke-dashoffset="{{ edge.dashOffset }}"></line>
+            </sc-for>
+          </svg>
+          <sc-for list="{{ nodesSearch }}" as="node" hint-placeholder-count="6">
+            <div style="position:absolute;left:{{ node.x }}%;top:{{ node.y }}%;transform:translate(-50%,-50%)">
+              <sc-if value="{{ node.active }}"><div style="position:absolute;inset:-16px;border-radius:50%;border:2px solid {{ node.color }};animation:pulseRing 1.1s ease-out infinite"></div></sc-if>
+              <div style="width:14px;height:14px;border-radius:50%;background:{{ node.color }};border:2px solid {{ theme.bg }};transition:background .4s"></div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div onClick="{{ cancelSearch }}" style="position:absolute;top:18px;right:18px;background:{{ theme.headerGlass }};backdrop-filter:blur(10px);color:{{ theme.text }};font-size:12px;font-weight:700;padding:8px 14px;border-radius:20px;cursor:pointer">Cancel</div>
+
+        <div style="position:absolute;left:0;right:0;bottom:0;background:{{ theme.surface }};border-radius:22px 22px 0 0;box-shadow:0 -14px 32px rgba(0,0,0,.22);padding:22px 20px 30px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:16px;height:16px;border:2px solid {{ theme.border }};border-top-color:{{ theme.primary }};border-radius:50%;animation:spin .8s linear infinite"></div>
+            <div style="font-size:14px;font-weight:600;color:{{ theme.text }}">{{ loadingStageText }}</div>
+          </div>
+          <div style="height:8px;border-radius:6px;background:{{ theme.border }};overflow:hidden">
+            <div style="height:100%;border-radius:6px;background:{{ theme.primary }};width:{{ loadingProgress }}%;transition:width .15s linear"></div>
+          </div>
+          <div style="font-size:12px;color:{{ theme.subtext }};text-align:right">{{ loadingProgressLabel }}</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ===== SCREEN 3: RESULT ===== -->
+    <sc-if value="{{ isScreen3 }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:{{ theme.bg }}">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 10px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span onClick="{{ backToScreen1 }}" style="cursor:pointer;font-size:16px;color:{{ theme.text }}">←</span>
+            <span style="font-size:17px;font-weight:800;color:{{ theme.text }};letter-spacing:-.3px">HanGaRo</span>
+          </div>
+          <div style="display:flex;gap:14px;font-size:16px;color:{{ theme.text }}">
+            <span style="cursor:pointer">💾</span>
+            <span style="cursor:pointer">↗️</span>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;padding:2px 16px 12px">
+          <sc-for list="{{ planTabs }}" as="pt" hint-placeholder-count="3">
+            <div onClick="{{ pt.onClick }}" style="flex:1;padding:9px 6px;border-radius:12px;cursor:pointer;text-align:center;background:{{ pt.bg }};border:1px solid {{ pt.border }}">
+              <div style="font-size:12px;font-weight:700;color:{{ pt.fg }}">{{ pt.title }}</div>
+              <div style="font-size:10px;color:{{ pt.subFg }};margin-top:2px">{{ pt.metric }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="position:relative;height:{{ mapHeightPx }}px;overflow:hidden;background:{{ theme.mapBg }};transition:height .18s ease-out">
+          <div style="position:absolute;inset:0;background-image:repeating-linear-gradient({{ theme.mapGrid }} 0 1px, transparent 1px 64px), repeating-linear-gradient(90deg, {{ theme.mapGrid }} 0 1px, transparent 1px 64px)"></div>
+          <svg style="position:absolute;inset:0;width:100%;height:100%">
+            <polyline points="{{ routePoints }}" fill="none" stroke="{{ planColor }}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          </svg>
+          <sc-for list="{{ nodesResult }}" as="node" hint-placeholder-count="4">
+            <div style="position:absolute;left:{{ node.x }}%;top:{{ node.y }}%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:{{ node.color }};border:2px solid {{ theme.bg }};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white">{{ node.order }}</div>
+          </sc-for>
+        </div>
+
+        <div onPointerDown="{{ onSplitPointerDown }}" style="display:flex;justify-content:center;padding:8px 0;cursor:row-resize;background:{{ theme.bg }}">
+          <div style="width:38px;height:4px;border-radius:3px;background:{{ theme.border }}"></div>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;padding:0 16px 24px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;gap:10px">
+            <div style="flex:1;background:{{ theme.surface }};border-radius:12px;padding:10px 12px">
+              <div style="font-size:11px;color:{{ theme.subtext }}">Congestion</div>
+              <div style="font-size:16px;font-weight:800;color:{{ theme.primary }}">{{ summaryCongestion }}</div>
+            </div>
+            <div style="flex:1;background:{{ theme.surface }};border-radius:12px;padding:10px 12px">
+              <div style="font-size:11px;color:{{ theme.subtext }}">Avg. crowd</div>
+              <div style="font-size:16px;font-weight:800;color:{{ theme.text }}">{{ summaryAvg }}</div>
+            </div>
+          </div>
+
+          <sc-if value="{{ showBufferAlert }}">
+            <div style="background:#fef9c3;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;gap:8px;align-items:flex-start">
+                <span style="font-size:15px">⚠️</span>
+                <div style="font-size:12.5px;line-height:1.5;color:#854d0e;font-weight:500">Gyeongbokgung is very crowded right now. We recommend visiting Seochon → Tonguido first, then heading to Gyeongbokgung.</div>
+              </div>
+              <div style="display:flex;gap:10px">
+                <div onClick="{{ switchBufferRoute }}" style="flex:1;text-align:center;background:#ca8a04;color:white;font-size:12.5px;font-weight:700;padding:9px 0;border-radius:9px;cursor:pointer">Switch to This Route</div>
+                <div onClick="{{ keepOriginal }}" style="text-align:center;color:#854d0e;font-size:12.5px;font-weight:700;padding:9px 10px;cursor:pointer">Keep Original</div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-for list="{{ resultWaypoints }}" as="rw" hint-placeholder-count="5">
+            <div>
+              <div onPointerDown="{{ rw.onDragStart }}" style="display:flex;align-items:center;gap:10px;background:{{ theme.surface }};border-radius:12px;padding:11px 12px;opacity:{{ rw.dragOpacity }};touch-action:none">
+                <div style="width:22px;height:22px;border-radius:50%;background:{{ theme.bg }};border:1.5px solid {{ theme.border }};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:{{ theme.text }}">{{ rw.index }}</div>
+                <div style="flex:1">
+                  <div style="font-size:14.5px;font-weight:600;color:{{ theme.text }}">{{ rw.name }}</div>
+                  <div style="font-size:11.5px;color:{{ theme.subtext }};margin-top:2px">Stay ~{{ rw.stay }}</div>
+                </div>
+                <div style="font-size:11px;font-weight:600;padding:4px 9px;border-radius:20px;background:{{ rw.badgeBg }};color:{{ rw.badgeFg }}">{{ rw.levelLabel }}</div>
+                <span style="cursor:grab;color:{{ theme.subtext }};font-size:15px">≡</span>
+              </div>
+              <sc-if value="{{ rw.showConnector }}">
+                <div style="display:flex;align-items:center;gap:6px;padding:6px 0 6px 18px;font-size:11px;color:{{ theme.subtext }}">
+                  <span>{{ rw.connectorIcon }}</span><span>{{ rw.connectorTime }}</span>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+
+          <div onClick="{{ backToScreen1 }}" style-hover="background:{{ theme.border }}" style="margin-top:6px;text-align:center;padding:14px 0;border-radius:12px;border:1px solid {{ theme.border }};color:{{ theme.text }};font-size:14px;font-weight:700;cursor:pointer">Search Again</div>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const LIGHT = { bg:'#ffffff', surface:'#f9fafb', text:'#111827', subtext:'#6b7280', border:'#e5e7eb', primary:'#22c55e', mapBg:'#eef2f0', mapGrid:'rgba(17,24,39,0.05)', mapBlock:'rgba(17,24,39,0.06)', headerGlass:'rgba(255,255,255,0.55)' };
+const DARK = { bg:'#0f172a', surface:'#1e293b', text:'#f8fafc', subtext:'#94a3b8', border:'#334155', primary:'#4ade80', mapBg:'#0b1424', mapGrid:'rgba(148,163,184,0.08)', mapBlock:'rgba(148,163,184,0.09)', headerGlass:'rgba(15,23,42,0.55)' };
+
+const LEVEL_COLOR = { quiet:'#16a34a', relaxed:'#ca8a04', moderate:'#ea580c', crowded:'#dc2626' };
+const LEVEL_BADGE_BG = { quiet:'#dcfce7', relaxed:'#fef9c3', moderate:'#ffedd5', crowded:'#fee2e2' };
+const LEVEL_LABEL = { quiet:'🟢 Quiet', relaxed:'🟡 Relaxed', moderate:'🟠 Moderate', crowded:'🔴 Crowded' };
+
+const IDLE_NODES = [
+  { id:'gb', name:'Gyeongbokgung', x:44, y:30, level:'crowded' },
+  { id:'bc', name:'Bukchon', x:58, y:24, level:'moderate' },
+  { id:'is', name:'Insadong', x:62, y:44, level:'moderate' },
+  { id:'cd', name:'Changdeokgung', x:70, y:32, level:'quiet' },
+  { id:'np', name:'Naksan Park', x:80, y:48, level:'quiet' },
+  { id:'im', name:'Ihwa Village', x:76, y:62, level:'relaxed' },
+];
+
+const MAP_BLOCKS = [
+  {x:8,y:14,w:34,h:22},{x:20,y:40,w:26,h:18},{x:55,y:12,w:22,h:16},{x:10,y:66,w:30,h:20},
+  {x:66,y:70,w:24,h:16},{x:38,y:70,w:18,h:14},{x:82,y:20,w:16,h:14},{x:50,y:52,w:20,h:14},
+  {x:6,y:88,w:22,h:10},{x:70,y:44,w:14,h:12},
+];
+
+const RESULT_WAYPOINTS_BASE = [
+  { id:'cd', name:'Changdeokgung', level:'quiet', stay:'40 min', connectorIcon:'🚶', connectorTime:'Walk 15 min' },
+  { id:'np', name:'Naksan Park', level:'quiet', stay:'25 min', connectorIcon:'🚌', connectorTime:'Bus 10 min' },
+  { id:'im', name:'Ihwa Mural Village', level:'relaxed', stay:'35 min', connectorIcon:'🚶', connectorTime:'Walk 8 min' },
+  { id:'bc', name:'Bukchon Hanok Village', level:'moderate', stay:'30 min', connectorIcon:null, connectorTime:null },
+];
+
+const PLAN_META = {
+  A: { title:'Plan A', metric:'Min Crowd', longMetric:'Min congestion · Avg 0.28', color:'#22c55e' },
+  B: { title:'Plan B', metric:'Shortest', longMetric:'30 min travel · Shortest distance', color:'#3b82f6' },
+  C: { title:'Plan C', metric:'Hidden Gems', longMetric:'3 hidden gems included', color:'#a855f7' },
+};
+
+const LOADING_STAGES = ['Collecting tourist spot data...', 'Analyzing congestion levels...', 'Calculating optimal route...'];
+
+class Component extends DCLogic {
+  state = {
+    dark: false,
+    screen: 1,
+    sheetHeightPx: 852 * 0.5,
+    sheetDrag: null,
+    transport: 'walk',
+    destination: '',
+    waypointsScreen1: [],
+    tipNodeId: null,
+    loadingProgress: 0,
+    loadingStage: 0,
+    plan: 'A',
+    mapHeightPx: 300,
+    splitDrag: null,
+    bufferDismissed: false,
+    bufferApplied: false,
+    resultWaypoints: RESULT_WAYPOINTS_BASE.map((w, i) => ({ ...w, order: i + 1 })),
+    dragWpId: null,
+    scale: 1,
+  };
+
+  componentDidMount() {
+    this.updateScale();
+    window.addEventListener('resize', this.updateScale);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this._loadTimer);
+    window.removeEventListener('resize', this.updateScale);
+  }
+
+  updateScale = () => {
+    const availW = window.innerWidth - 32;
+    const availH = window.innerHeight - 100;
+    const s = Math.min(1, availW / 393, availH / 852);
+    this.setState({ scale: s });
+  };
+
+  toggleDark = () => this.setState(s => ({ dark: !s.dark }));
+
+  goToScreen = (n) => this.setState({ screen: n });
+  backToScreen1 = () => { clearInterval(this._loadTimer); this.setState({ screen: 1 }); };
+
+  onSheetPointerDown = (e) => {
+    e.preventDefault();
+    this.setState({ sheetDrag: { startY: e.clientY, startH: this.state.sheetHeightPx } });
+    const move = (ev) => {
+      this.setState(s => {
+        if (!s.sheetDrag) return null;
+        const delta = s.sheetDrag.startY - ev.clientY;
+        const h = Math.max(64, Math.min(760, s.sheetDrag.startH + delta));
+        return { sheetHeightPx: h };
+      });
+    };
+    const up = () => {
+      this.setState(s => {
+        const h = s.sheetHeightPx;
+        const snaps = [64, 426, 760];
+        const target = snaps.reduce((a, b) => Math.abs(b - h) < Math.abs(a - h) ? b : a);
+        return { sheetHeightPx: target, sheetDrag: null };
+      });
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  onSplitPointerDown = (e) => {
+    e.preventDefault();
+    this.setState({ splitDrag: { startY: e.clientY, startH: this.state.mapHeightPx } });
+    const move = (ev) => {
+      this.setState(s => {
+        if (!s.splitDrag) return null;
+        const delta = ev.clientY - s.splitDrag.startY;
+        const h = Math.max(0, Math.min(560, s.splitDrag.startH + delta));
+        return { mapHeightPx: h };
+      });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      this.setState({ splitDrag: null });
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  setTransport = (m) => this.setState({ transport: m });
+  onDestinationChange = (e) => this.setState({ destination: e.target.value });
+  clearDestination = () => this.setState({ destination: '' });
+
+  addWaypoint = () => {
+    const pool = ['Bukchon Hanok Village', 'Insadong', 'Seochon', 'Deoksugung'];
+    const used = this.state.waypointsScreen1.map(w => w.name);
+    const next = pool.find(p => !used.includes(p));
+    if (!next) return;
+    this.setState(s => ({ waypointsScreen1: [...s.waypointsScreen1, { id: next, name: next }] }));
+  };
+  removeWaypointS1 = (id) => this.setState(s => ({ waypointsScreen1: s.waypointsScreen1.filter(w => w.id !== id) }));
+
+  startSearch = () => {
+    clearInterval(this._loadTimer);
+    this.setState({ screen: 2, loadingProgress: 0, loadingStage: 0 });
+    const t0 = Date.now();
+    const duration = 2200;
+    this._loadTimer = setInterval(() => {
+      const elapsed = Date.now() - t0;
+      const pct = Math.min(100, Math.round((elapsed / duration) * 100));
+      const stage = pct < 34 ? 0 : pct < 67 ? 1 : 2;
+      this.setState({ loadingProgress: pct, loadingStage: stage });
+      if (pct >= 100) {
+        clearInterval(this._loadTimer);
+        setTimeout(() => this.setState({ screen: 3 }), 350);
+      }
+    }, 90);
+  };
+  cancelSearch = () => { clearInterval(this._loadTimer); this.setState({ screen: 1 }); };
+
+  setPlan = (p) => this.setState({ plan: p });
+
+  switchBufferRoute = () => this.setState({ bufferApplied: true, bufferDismissed: true });
+  keepOriginal = () => this.setState({ bufferDismissed: true });
+
+  onWpPointerDown = (id, e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    this.setState({ dragWpId: id });
+    const move = (ev) => {
+      const delta = ev.clientY - startY;
+      if (Math.abs(delta) < 34) return;
+      this.setState(s => {
+        const list = [...s.resultWaypoints];
+        const idx = list.findIndex(w => w.id === id);
+        const swapIdx = delta > 0 ? idx + 1 : idx - 1;
+        if (swapIdx < 0 || swapIdx >= list.length) return null;
+        [list[idx], list[swapIdx]] = [list[swapIdx], list[idx]];
+        return { resultWaypoints: list.map((w, i) => ({ ...w, order: i + 1 })) };
+      });
+      startY2Reset();
+    };
+    let lastY = e.clientY;
+    const move2 = (ev) => {
+      const delta = ev.clientY - lastY;
+      if (Math.abs(delta) < 36) return;
+      lastY = ev.clientY;
+      this.setState(s => {
+        const list = [...s.resultWaypoints];
+        const idx = list.findIndex(w => w.id === id);
+        const swapIdx = delta > 0 ? idx + 1 : idx - 1;
+        if (swapIdx < 0 || swapIdx >= list.length) return null;
+        [list[idx], list[swapIdx]] = [list[swapIdx], list[idx]];
+        return { resultWaypoints: list.map((w, i) => ({ ...w, order: i + 1 })) };
+      });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move2);
+      window.removeEventListener('pointerup', up);
+      this.setState({ dragWpId: null });
+    };
+    function startY2Reset() {}
+    window.addEventListener('pointermove', move2);
+    window.addEventListener('pointerup', up);
+  };
+
+  renderVals() {
+    const s = this.state;
+    const theme = s.dark ? DARK : LIGHT;
+
+    const navTabs = [1, 2, 3].map(n => ({
+      label: n === 1 ? '1 Map' : n === 2 ? '2 Search' : '3 Result',
+      onClick: () => this.goToScreen(n),
+      bg: s.screen === n ? theme.primary : theme.surface,
+      fg: s.screen === n ? '#ffffff' : theme.text,
+    }));
+
+    const nodesIdle = IDLE_NODES.map(n => ({
+      ...n,
+      color: LEVEL_COLOR[n.level],
+      levelLabel: LEVEL_LABEL[n.level],
+      pulseDur: n.level === 'crowded' ? '0.9s' : n.level === 'moderate' ? '1.3s' : '2.1s',
+      showTip: s.tipNodeId === n.id,
+      onClick: () => this.setState(st => ({ tipNodeId: st.tipNodeId === n.id ? null : n.id })),
+    }));
+
+    const transportModes = [
+      { id: 'walk', label: '🚶 Walk' },
+      { id: 'transit', label: '🚌 Transit' },
+      { id: 'car', label: '🚗 Car' },
+    ].map(t => ({
+      ...t,
+      onClick: () => this.setTransport(t.id),
+      bg: s.transport === t.id ? theme.primary : theme.bg,
+      fg: s.transport === t.id ? '#ffffff' : theme.text,
+    }));
+
+    const waypointsScreen1 = s.waypointsScreen1.map(w => ({ ...w, onRemove: () => this.removeWaypointS1(w.id) }));
+    const hasDestOrWp = !!s.destination || s.waypointsScreen1.length > 0;
+
+    const totalNodes = IDLE_NODES.length;
+    const activeCount = Math.round((s.loadingProgress / 100) * totalNodes);
+    const nodesSearch = IDLE_NODES.map((n, i) => ({
+      ...n,
+      active: i < activeCount,
+      color: i < activeCount ? '#22c55e' : LEVEL_COLOR[n.level],
+    }));
+    const searchEdges = IDLE_NODES.slice(0, -1).map((n, i) => {
+      const next = IDLE_NODES[i + 1];
+      return { x1: n.x, y1: n.y, x2: next.x, y2: next.y, color: i < activeCount - 1 ? '#22c55e' : theme.mapGrid, dashOffset: -((s.loadingProgress * 2) % 40) };
+    });
+
+    const plan = PLAN_META[s.plan];
+    const planTabs = Object.keys(PLAN_META).map(k => {
+      const pm = PLAN_META[k];
+      const active = s.plan === k;
+      return {
+        key: k, title: pm.title, metric: pm.metric, onClick: () => this.setPlan(k),
+        bg: active ? theme.primary : theme.surface,
+        border: active ? theme.primary : theme.border,
+        fg: active ? '#ffffff' : theme.text,
+        subFg: active ? 'rgba(255,255,255,0.85)' : theme.subtext,
+      };
+    });
+
+    const routePts = IDLE_NODES.slice(0, 4).map(n => `${n.x * 3.93},${n.y * 3}`).join(' ');
+    const nodesResult = IDLE_NODES.slice(0, 4).map((n, i) => ({ ...n, order: i + 1, color: plan.color }));
+
+    const rw = s.resultWaypoints;
+    const resultWaypoints = rw.map((w, i) => ({
+      ...w,
+      index: i + 1,
+      badgeBg: LEVEL_BADGE_BG[w.level],
+      badgeFg: LEVEL_COLOR[w.level],
+      levelLabel: LEVEL_LABEL[w.level].split(' ')[1],
+      onDragStart: (e) => this.onWpPointerDown(w.id, e),
+      dragOpacity: s.dragWpId === w.id ? 0.55 : 1,
+      showConnector: i < rw.length - 1,
+    }));
+
+    const congestionVal = s.bufferApplied ? '-73%' : '-61%';
+    const avgVal = s.bufferApplied ? '0.19' : s.plan === 'A' ? '0.28' : s.plan === 'B' ? '0.41' : '0.33';
+
+    return {
+      theme, outerBg: s.dark ? '#05070d' : '#e7ebe9',
+      scale: s.scale, scaledW: Math.round(393 * s.scale), scaledH: Math.round(852 * s.scale),
+      isScreen1: s.screen === 1, isScreen2: s.screen === 2, isScreen3: s.screen === 3,
+      navTabs, toggleDark: this.toggleDark,
+      darkToggleLabel: s.dark ? '☀️ Light' : '🌙 Dark',
+      modeIcon: s.dark ? '☀️' : '🌙',
+      mapBlocks: MAP_BLOCKS, nodesIdle,
+      sheetHeightPx: Math.round(s.sheetHeightPx),
+      onSheetPointerDown: this.onSheetPointerDown,
+      transportModes,
+      destination: s.destination, onDestinationChange: this.onDestinationChange, clearDestination: this.clearDestination,
+      waypointsScreen1, addWaypoint: this.addWaypoint,
+      startSearch: this.startSearch,
+      ctaLabel: hasDestOrWp ? 'Find Route' : 'Recommend Quiet Places Nearby',
+
+      cancelSearch: this.cancelSearch,
+      nodesSearch, searchEdges,
+      loadingStageText: LOADING_STAGES[s.loadingStage],
+      loadingProgress: s.loadingProgress,
+      loadingProgressLabel: `${s.loadingProgress}%`,
+
+      backToScreen1: this.backToScreen1,
+      planTabs, planColor: plan.color,
+      mapHeightPx: Math.round(s.mapHeightPx),
+      onSplitPointerDown: this.onSplitPointerDown,
+      routePoints: routePts, nodesResult,
+      summaryCongestion: `${congestionVal} ↓`, summaryAvg: avgVal,
+      showBufferAlert: s.plan === 'A' && !s.bufferDismissed,
+      switchBufferRoute: this.switchBufferRoute, keepOriginal: this.keepOriginal,
+      resultWaypoints,
+    };
+  }
+}
+
+</script>
+</body>
+</html>
