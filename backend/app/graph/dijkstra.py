@@ -35,6 +35,48 @@ def modified_dijkstra(
     return path  # n_stops 미만인 경우 부분 결과 반환
 
 
+def shortest_route(
+    G: nx.DiGraph,
+    start: str,
+    n_stops: int = 5,
+) -> list[str]:
+    """Plan B — 이동시간 최소 (혼잡도 패널티 없음, travel_min 기준)"""
+    heap = [(0.0, start, [start])]
+    visited: set[str] = set()
+    path = [start]
+
+    while heap:
+        cost, node, path = heapq.heappop(heap)
+        if node in visited:
+            continue
+        visited.add(node)
+
+        if len(path) == n_stops:
+            return path
+
+        for neighbor in G.neighbors(node):
+            if neighbor in visited:
+                continue
+            edge_cost = G[node][neighbor]["travel_min"]
+            heapq.heappush(heap, (cost + edge_cost, neighbor, path + [neighbor]))
+
+    return path
+
+
+def gem_priority_route(
+    G: nx.DiGraph,
+    start: str,
+    n_stops: int = 5,
+) -> list[str]:
+    """Plan C — hidden_gem_score 높은 순 greedy 선택 (숨은 명소 우선)"""
+    candidates = sorted(
+        [n for n in G.nodes if n != start],
+        key=lambda n: G.nodes[n]["hidden_gem_score"],
+        reverse=True,
+    )
+    return [start] + candidates[:n_stops - 1]
+
+
 def fixed_destination_route(
     G: nx.DiGraph,
     start: str,

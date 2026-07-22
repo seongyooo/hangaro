@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 
-from app.services.kto_api import get_spots_by_location, search_keyword
+from app.services.kto_api import get_spots_by_location, search_keyword, get_detail_common, get_area_code
 
 router = APIRouter()
 
@@ -12,6 +12,11 @@ async def nearby_spots(lat: float, lng: float, radius: int = Query(default=3000,
 
 @router.get("/search")
 async def search_spots(keyword: str, region: str = ""):
-    AREA_CODE = {"서울": "1", "부산": "6", "경주": "35", "제주": "39"}
-    area_code = AREA_CODE.get(region, "")
+    area_code = get_area_code(region) if region else ""
     return await search_keyword(keyword, area_code)
+
+
+@router.get("/detail/{content_id}")
+async def spot_detail(content_id: str):
+    """detailCommon — 운영시간, 입장료, 주소, 개요 등 상세 정보"""
+    return await get_detail_common(content_id)

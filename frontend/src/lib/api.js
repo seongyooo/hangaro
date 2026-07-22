@@ -12,6 +12,9 @@ export const api = {
   searchSpots(keyword, region = '') {
     return client.get('/spots/search', { params: { keyword, region } })
   },
+  spotDetail(contentId) {
+    return client.get(`/spots/detail/${contentId}`)
+  },
   congestion(spotId, category = 'attraction') {
     return client.get(`/congestion/${spotId}`, { params: { category } })
   },

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import SmartMapView from '../components/map/SmartMapView'
 import {
   WalkIcon, TransitIcon, CarIcon, MapPinIcon,
-  PlusIcon, XIcon, SunIcon, MoonIcon,
+  PlusIcon, XIcon, SunIcon, MoonIcon, SidebarIcon,
 } from '../components/ui/Icons'
 import {
   IDLE_NODES,
@@ -45,6 +45,7 @@ export default function MainPage({
   const [isDesktop, setIsDesktop] = useState(
     () => window.innerWidth >= DESKTOP_BREAKPOINT
   )
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sheetH, setSheetH] = useState(() => Math.round(window.innerHeight * 0.5))
   const sheetDragRef = useRef(null)
   const panelRef = useRef(null)
@@ -52,6 +53,7 @@ export default function MainPage({
   // Map interaction state (local to MainPage)
   const [destPin, setDestPin] = useState(null)   // { lat, lng, name } — 지도에 목적지 핀 표시용
   const [centerOn, setCenterOn] = useState(null)
+  const [selectedSpot, setSelectedSpot] = useState(null)  // 클릭한 관광지 상세 패널
 
   useEffect(() => {
     const handle = () => setIsDesktop(window.innerWidth >= DESKTOP_BREAKPOINT)
@@ -59,8 +61,10 @@ export default function MainPage({
     return () => window.removeEventListener('resize', handle)
   }, [])
 
+  const SHEET_CLOSED = 28  // 핸들 바만 보이는 최소 높이
+
   const getSnapPx = useCallback((containerH) => [
-    64,
+    SHEET_CLOSED,
     Math.round(containerH * 0.5),
     Math.round(containerH * 0.82),
   ], [])
@@ -76,12 +80,13 @@ export default function MainPage({
     const onMove = (ev) => {
       if (!sheetDragRef.current) return
       const delta = sheetDragRef.current.startY - ev.clientY
-      const next = Math.max(64, Math.min(containerH - 80, sheetDragRef.current.startH + delta))
+      const next = Math.max(SHEET_CLOSED, Math.min(containerH - 80, sheetDragRef.current.startH + delta))
+      sheetDragRef.current.curH = next   // 현재 높이를 ref에 실시간 저장
       setSheetH(next)
     }
     const onUp = () => {
       if (!sheetDragRef.current) return
-      const cur = sheetH ?? snaps[1]
+      const cur = sheetDragRef.current.curH ?? sheetDragRef.current.startH
       const snapped = snaps.reduce((a, b) =>
         Math.abs(b - cur) < Math.abs(a - cur) ? b : a
       )
@@ -131,7 +136,14 @@ export default function MainPage({
     levelLabel: LEVEL_LABEL[n.level],
     pulseDur: n.level === 'crowded' ? '0.9s' : n.level === 'moderate' ? '1.3s' : '2.1s',
     showTip: tipNodeId === n.id,
-    onClick: () => setTipNodeId(tipNodeId === n.id ? null : n.id),
+    onClick: () => {
+      setTipNodeId(tipNodeId === n.id ? null : n.id)
+      setSelectedSpot((prev) => (prev?.id === n.id ? null : n))
+      // 모바일: 바텀시트 절반 높이로 열기
+      if (!isDesktop && window.innerHeight) {
+        setSheetH(Math.round(window.innerHeight * 0.5))
+      }
+    },
   }))
 
   // attractionPins: IDLE_NODES 기반 고정 데이터 — useMemo로 안정화
@@ -208,21 +220,39 @@ export default function MainPage({
         <span style={{ fontSize: 19, fontWeight: 800, color: theme.text, letterSpacing: '-0.4px' }}>
           HanGaRo
         </span>
-        <button
-          onClick={toggleDark}
-          style={{
-            width: 34, height: 34, borderRadius: '50%',
-            background: theme.surface,
-            border: `1px solid ${theme.border}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', color: theme.subtext,
-          }}
-          aria-label="Toggle dark mode"
-        >
-          {dark
-            ? <SunIcon size={15} color={theme.subtext} />
-            : <MoonIcon size={15} color={theme.subtext} />}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isDesktop && (
+            <button
+              onClick={() => setSidebarOpen((s) => !s)}
+              title={sidebarOpen ? '패널 닫기' : '패널 열기'}
+              style={{
+                width: 34, height: 34, borderRadius: '50%',
+                background: sidebarOpen ? theme.primary + '18' : theme.surface,
+                border: `1px solid ${sidebarOpen ? theme.primary + '40' : theme.border}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+              aria-label="Toggle sidebar"
+            >
+              <SidebarIcon size={15} color={sidebarOpen ? theme.primary : theme.subtext} />
+            </button>
+          )}
+          <button
+            onClick={toggleDark}
+            style={{
+              width: 34, height: 34, borderRadius: '50%',
+              background: theme.surface,
+              border: `1px solid ${theme.border}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+            aria-label="Toggle dark mode"
+          >
+            {dark
+              ? <SunIcon size={15} color={theme.subtext} />
+              : <MoonIcon size={15} color={theme.subtext} />}
+          </button>
+        </div>
       </header>
 
       {/* ── Map + Panel ── */}
@@ -241,7 +271,7 @@ export default function MainPage({
         />
 
         {/* Desktop sidebar */}
-        {isDesktop && (
+        {isDesktop && sidebarOpen && (
           <div
             style={{
               width: 380,
@@ -255,26 +285,34 @@ export default function MainPage({
               overflow: 'visible',
             }}
           >
-            <PanelContent
-              theme={theme}
-              transport={transport}
-              setTransport={setTransport}
-              searchCenter={searchCenter}
-              userLocation={userLocation}
-              origin={origin}
-              onOriginSelect={handleOriginSelect}
-              onOriginClear={handleOriginClear}
-              destination={destination}
-              onDestinationSelect={handleDestinationSelect}
-              onDestinationClear={handleDestinationClear}
-              waypoints={waypoints}
-              onWaypointSelect={handleWaypointSelect}
-              addWaypoint={addWaypoint}
-              removeWaypoint={removeWaypoint}
-              hasDestOrWp={hasDestOrWp}
-              ctaLabel={ctaLabel}
-              startSearch={startSearch}
-            />
+            {selectedSpot ? (
+              <PlaceDetailPanel
+                theme={theme}
+                spot={selectedSpot}
+                onClose={() => setSelectedSpot(null)}
+              />
+            ) : (
+              <PanelContent
+                theme={theme}
+                transport={transport}
+                setTransport={setTransport}
+                searchCenter={searchCenter}
+                userLocation={userLocation}
+                origin={origin}
+                onOriginSelect={handleOriginSelect}
+                onOriginClear={handleOriginClear}
+                destination={destination}
+                onDestinationSelect={handleDestinationSelect}
+                onDestinationClear={handleDestinationClear}
+                waypoints={waypoints}
+                onWaypointSelect={handleWaypointSelect}
+                addWaypoint={addWaypoint}
+                removeWaypoint={removeWaypoint}
+                hasDestOrWp={hasDestOrWp}
+                ctaLabel={ctaLabel}
+                startSearch={startSearch}
+              />
+            )}
           </div>
         )}
       </div>
@@ -303,27 +341,35 @@ export default function MainPage({
           >
             <div style={{ width: 36, height: 4, borderRadius: 3, background: theme.border }} />
           </div>
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <PanelContent
-              theme={theme}
-              transport={transport}
-              setTransport={setTransport}
-              searchCenter={searchCenter}
-              userLocation={userLocation}
-              origin={origin}
-              onOriginSelect={handleOriginSelect}
-              onOriginClear={handleOriginClear}
-              destination={destination}
-              onDestinationSelect={handleDestinationSelect}
-              onDestinationClear={handleDestinationClear}
-              waypoints={waypoints}
-              onWaypointSelect={handleWaypointSelect}
-              addWaypoint={addWaypoint}
-              removeWaypoint={removeWaypoint}
-              hasDestOrWp={hasDestOrWp}
-              ctaLabel={ctaLabel}
-              startSearch={startSearch}
-            />
+          <div style={{ flex: 1, overflow: 'hidden', display: sheetH <= SHEET_CLOSED ? 'none' : 'flex', flexDirection: 'column' }}>
+            {selectedSpot ? (
+              <PlaceDetailPanel
+                theme={theme}
+                spot={selectedSpot}
+                onClose={() => setSelectedSpot(null)}
+              />
+            ) : (
+              <PanelContent
+                theme={theme}
+                transport={transport}
+                setTransport={setTransport}
+                searchCenter={searchCenter}
+                userLocation={userLocation}
+                origin={origin}
+                onOriginSelect={handleOriginSelect}
+                onOriginClear={handleOriginClear}
+                destination={destination}
+                onDestinationSelect={handleDestinationSelect}
+                onDestinationClear={handleDestinationClear}
+                waypoints={waypoints}
+                onWaypointSelect={handleWaypointSelect}
+                addWaypoint={addWaypoint}
+                removeWaypoint={removeWaypoint}
+                hasDestOrWp={hasDestOrWp}
+                ctaLabel={ctaLabel}
+                startSearch={startSearch}
+              />
+            )}
           </div>
         </div>
       )}
@@ -576,6 +622,176 @@ function PanelContent({
       >
         {ctaLabel}
       </button>
+    </div>
+  )
+}
+
+// ── Place Detail Panel ───────────────────────────────────────────────────────
+const NEARBY_CATEGORIES = [
+  { code: 'AT4', label: '관광명소' },
+  { code: 'CE7', label: '카페' },
+  { code: 'FD6', label: '음식점' },
+  { code: 'AD5', label: '숙박' },
+]
+
+function PlaceDetailPanel({ theme, spot, onClose }) {
+  const [activeTab, setActiveTab] = useState('AT4')
+  const [nearbyResults, setNearbyResults] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  const searchNearby = useCallback((categoryCode) => {
+    const kakao = window.kakao
+    if (!kakao?.maps) return
+
+    const run = (services) => {
+      if (!services?.Places) return
+      const ps = new services.Places()
+      setLoading(true)
+      setNearbyResults([])
+      ps.categorySearch(
+        categoryCode,
+        (data, status) => {
+          setLoading(false)
+          if (status === services.Status.OK) {
+            setNearbyResults(data.slice(0, 6))
+          }
+        },
+        {
+          location: new kakao.maps.LatLng(spot.lat, spot.lng),
+          radius: 800,
+          sort: kakao.maps.services.SortBy?.DISTANCE,
+        }
+      )
+    }
+
+    if (kakao.maps.services?.Places) {
+      run(kakao.maps.services)
+    } else {
+      kakao.maps.load(() => run(kakao.maps.services))
+    }
+  }, [spot])
+
+  useEffect(() => {
+    searchNearby(activeTab)
+  }, [activeTab, searchNearby])
+
+  const congestionColor = {
+    quiet: '#10b981', relaxed: '#f59e0b', moderate: '#f97316', crowded: '#ef4444',
+  }[spot.level] || '#6b7280'
+
+  const congestionLabel = {
+    quiet: '한적', relaxed: '여유', moderate: '보통', crowded: '혼잡',
+  }[spot.level] || '보통'
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '14px 16px 10px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <button
+            onClick={onClose}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 8,
+              background: theme.surface, border: `1px solid ${theme.border}`,
+              cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            <XIcon size={13} color={theme.subtext} />
+          </button>
+          <span style={{ fontSize: 15, fontWeight: 700, color: theme.text, flex: 1 }}>
+            {spot.name}
+          </span>
+          <span
+            style={{
+              fontSize: 11, fontWeight: 700, color: congestionColor,
+              background: congestionColor + '18',
+              padding: '3px 8px', borderRadius: 20,
+            }}
+          >
+            {congestionLabel}
+          </span>
+        </div>
+
+        {/* Thumbnail */}
+        {spot.image && (
+          <img
+            src={spot.image}
+            alt={spot.name}
+            style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 10 }}
+          />
+        )}
+      </div>
+
+      {/* Category tabs */}
+      <div
+        style={{
+          display: 'flex', gap: 4, padding: '10px 16px 6px',
+          borderBottom: `1px solid ${theme.border}`, flexShrink: 0,
+          overflowX: 'auto',
+        }}
+      >
+        {NEARBY_CATEGORIES.map(({ code, label }) => {
+          const active = activeTab === code
+          return (
+            <button
+              key={code}
+              onClick={() => setActiveTab(code)}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 20,
+                fontSize: 12, fontWeight: 600,
+                cursor: 'pointer',
+                border: `1px solid ${active ? theme.primary : theme.border}`,
+                background: active ? theme.primary : 'transparent',
+                color: active ? '#fff' : theme.subtext,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                transition: 'background 0.15s, color 0.15s',
+              }}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Nearby results */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px 20px' }}>
+        {loading && (
+          <div style={{ textAlign: 'center', padding: 20, color: theme.subtext, fontSize: 13 }}>
+            검색 중...
+          </div>
+        )}
+        {!loading && nearbyResults.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 20, color: theme.subtext, fontSize: 13 }}>
+            주변 장소를 찾을 수 없습니다.
+          </div>
+        )}
+        {nearbyResults.map((place, i) => (
+          <div
+            key={place.id || i}
+            style={{
+              padding: '10px 0',
+              borderBottom: i < nearbyResults.length - 1 ? `1px solid ${theme.border}` : 'none',
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 3 }}>
+              {place.place_name}
+            </div>
+            <div style={{ fontSize: 11, color: theme.subtext, marginBottom: place.distance ? 4 : 0 }}>
+              {place.road_address_name || place.address_name}
+            </div>
+            {place.distance && (
+              <div style={{ fontSize: 11, color: theme.primary, fontWeight: 600 }}>
+                {Number(place.distance) >= 1000
+                  ? `${(Number(place.distance) / 1000).toFixed(1)}km`
+                  : `${place.distance}m`}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

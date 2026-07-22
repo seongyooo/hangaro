@@ -140,6 +140,7 @@ export default function App() {
   // API 결과
   const [resultSpots, setResultSpots] = useState([])          // 실제 관광지 (lat/lng 포함)
   const [apiStats, setApiStats] = useState(null)              // { congestion_avg, reduction_pct }
+  const [apiPlans, setApiPlans] = useState(null)              // { A: CoursePlan, B: CoursePlan, C: CoursePlan }
   const [tipNodeId, setTipNodeId] = useState(null)
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [loadingStage, setLoadingStage] = useState(0)
@@ -273,11 +274,18 @@ export default function App() {
       setLoadingProgress(100)
       setLoadingStage(2)
 
-      const { spots, total_congestion_avg, congestion_reduction_pct } = response.data
-      setResultSpots(spots)
-      setApiStats({ congestion_avg: total_congestion_avg, reduction_pct: congestion_reduction_pct })
+      const { plans } = response.data
+      setApiPlans(plans)
+      setPlan('A')  // 새 검색 시 Plan A로 초기화
 
-      const newWaypoints = spotsToWaypoints(spots, transport)
+      const activePlan = plans['A']
+      setResultSpots(activePlan.spots)
+      setApiStats({
+        congestion_avg: activePlan.total_congestion_avg,
+        reduction_pct: activePlan.congestion_reduction_pct,
+      })
+
+      const newWaypoints = spotsToWaypoints(activePlan.spots, transport)
       if (newWaypoints.length > 0) setResultWaypoints(newWaypoints)
     } catch (err) {
       console.warn('[HanGaRo] 백엔드 연결 실패, 데모 데이터 사용:', err.message)
@@ -346,6 +354,17 @@ export default function App() {
     const t = setTimeout(initKakao, 1500)
     return () => clearTimeout(t)
   }, [])
+
+  // Plan 탭 전환 시 해당 플랜 데이터로 ResultPage 갱신
+  useEffect(() => {
+    if (!apiPlans || !apiPlans[plan]) return
+    const p = apiPlans[plan]
+    setResultSpots(p.spots)
+    setApiStats({ congestion_avg: p.total_congestion_avg, reduction_pct: p.congestion_reduction_pct })
+    setResultWaypoints(spotsToWaypoints(p.spots, transport))
+  // transport 변경 시에도 waypoint connector 표시 재계산
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan, apiPlans, transport])
 
   // Clean up on unmount
   useEffect(() => {

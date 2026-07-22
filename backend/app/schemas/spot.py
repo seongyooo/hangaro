@@ -18,6 +18,13 @@ class SpotWithCongestion(SpotBase):
     congestion_label: str      # 한적 / 여유 / 보통 / 혼잡
 
 
+class CoursePlan(BaseModel):
+    spots: list[SpotWithCongestion]
+    total_congestion_avg: float
+    congestion_reduction_pct: float
+    message: str | None = None
+
+
 class RouteRequest(BaseModel):
     region: str                # 서울 / 부산 / 경주 / 제주
     date: str                  # YYYY-MM-DD
@@ -29,7 +36,4 @@ class RouteRequest(BaseModel):
 
 
 class RouteResponse(BaseModel):
-    spots: list[SpotWithCongestion]
-    total_congestion_avg: float
-    congestion_reduction_pct: float    # 유명 코스 대비 절감율
-    message: str | None = None         # 버퍼 라우팅 안내 메시지
+    plans: dict[str, CoursePlan]   # 'A' (혼잡 최소) | 'B' (최단 경로) | 'C' (숨은 명소)
