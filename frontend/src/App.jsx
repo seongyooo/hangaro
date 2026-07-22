@@ -283,6 +283,7 @@ export default function App() {
       setApiStats({
         congestion_avg: activePlan.total_congestion_avg,
         reduction_pct: activePlan.congestion_reduction_pct,
+        buffer_message: activePlan.message ?? null,
       })
 
       const newWaypoints = spotsToWaypoints(activePlan.spots, transport)
@@ -436,6 +437,7 @@ export default function App() {
           resultSpots={resultSpots}
           originNode={origin || userLocation}
           apiStats={apiStats}
+          apiPlans={apiPlans}
           transport={transport}
           dragWpId={dragWpId}
           onWpPointerDown={onWpPointerDown}

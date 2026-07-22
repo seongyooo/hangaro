@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import SmartMapView from '../components/map/SmartMapView'
 import {
   WalkIcon, TransitIcon, CarIcon, MapPinIcon,
-  PlusIcon, XIcon, SunIcon, MoonIcon, SidebarIcon,
+  PlusIcon, XIcon, SunIcon, MoonIcon,
 } from '../components/ui/Icons'
 import {
   IDLE_NODES,
@@ -12,12 +12,20 @@ import {
 } from '../App'
 
 const DESKTOP_BREAKPOINT = 768
+const SHEET_CLOSED = 28
 
 const TRANSPORT_MODES = [
-  { id: 'walk',    label: 'Walk',    Icon: WalkIcon },
-  { id: 'transit', label: 'Transit', Icon: TransitIcon },
-  { id: 'car',     label: 'Car',     Icon: CarIcon },
+  { id: 'walk',    label: '도보',    Icon: WalkIcon },
+  { id: 'transit', label: '대중교통', Icon: TransitIcon },
+  { id: 'car',     label: '차',      Icon: CarIcon },
 ]
+
+const CONGESTION_DESC = {
+  quiet:    '지금 방문하기 좋아요. 여유롭게 즐길 수 있어요.',
+  relaxed:  '여유로운 편이에요. 좋은 방문 타이밍이에요.',
+  moderate: '적당히 붐빕니다. 이른 아침이나 저녁 방문을 추천해요.',
+  crowded:  '지금 매우 붐비고 있어요. Plan A 코스를 이용하면 혼잡이 풀릴 때 방문할 수 있어요.',
+}
 
 export default function MainPage({
   theme,
@@ -45,15 +53,12 @@ export default function MainPage({
   const [isDesktop, setIsDesktop] = useState(
     () => window.innerWidth >= DESKTOP_BREAKPOINT
   )
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [sheetH, setSheetH] = useState(() => Math.round(window.innerHeight * 0.5))
+  const [sheetH, setSheetH] = useState(() => Math.round(window.innerHeight * 0.46))
   const sheetDragRef = useRef(null)
-  const panelRef = useRef(null)
 
-  // Map interaction state (local to MainPage)
-  const [destPin, setDestPin] = useState(null)   // { lat, lng, name } — 지도에 목적지 핀 표시용
+  const [destPin, setDestPin] = useState(null)
   const [centerOn, setCenterOn] = useState(null)
-  const [selectedSpot, setSelectedSpot] = useState(null)  // 클릭한 관광지 상세 패널
+  const [selectedSpot, setSelectedSpot] = useState(null)
 
   useEffect(() => {
     const handle = () => setIsDesktop(window.innerWidth >= DESKTOP_BREAKPOINT)
@@ -61,11 +66,9 @@ export default function MainPage({
     return () => window.removeEventListener('resize', handle)
   }, [])
 
-  const SHEET_CLOSED = 28  // 핸들 바만 보이는 최소 높이
-
   const getSnapPx = useCallback((containerH) => [
     SHEET_CLOSED,
-    Math.round(containerH * 0.5),
+    Math.round(containerH * 0.46),
     Math.round(containerH * 0.82),
   ], [])
 
@@ -81,7 +84,7 @@ export default function MainPage({
       if (!sheetDragRef.current) return
       const delta = sheetDragRef.current.startY - ev.clientY
       const next = Math.max(SHEET_CLOSED, Math.min(containerH - 80, sheetDragRef.current.startH + delta))
-      sheetDragRef.current.curH = next   // 현재 높이를 ref에 실시간 저장
+      sheetDragRef.current.curH = next
       setSheetH(next)
     }
     const onUp = () => {
@@ -103,9 +106,9 @@ export default function MainPage({
     setSelectedSpot((prev) => (prev?.id === pin.id ? null : pin))
     setTipNodeId((prev) => (prev === pin.id ? null : pin.id))
     if (!isDesktop) {
-      setSheetH(Math.round(window.innerHeight * 0.5))
+      setSheetH(Math.round(window.innerHeight * 0.46))
     }
-  }, [isDesktop])
+  }, [isDesktop, setTipNodeId])
 
   const handleDestinationSelect = useCallback((place) => {
     setDestination(place.name)
@@ -120,24 +123,22 @@ export default function MainPage({
     setDestPin(null)
   }, [setDestination, setDestinationLatLng])
 
-  const handleOriginSelect = useCallback((place) => {
-    setOrigin({ lat: place.lat, lng: place.lng, name: place.name })
-    setCenterOn({ lat: place.lat, lng: place.lng })
-  }, [setOrigin])
-
-  const handleOriginClear = useCallback(() => {
-    setOrigin(null)
-  }, [setOrigin])
-
   const handleWaypointSelect = useCallback((id, place) => {
     updateWaypoint(id, { name: place.name, lat: place.lat, lng: place.lng })
     setCenterOn({ lat: place.lat, lng: place.lng })
   }, [updateWaypoint])
 
-  const hasDestOrWp = !!destination || waypoints.some((w) => w.name)
-  const ctaLabel = hasDestOrWp ? 'Find Route' : 'Recommend Quiet Places'
+  const handleSetSpotAsDestination = useCallback((spot) => {
+    setDestination(spot.name)
+    setDestinationLatLng({ lat: spot.lat, lng: spot.lng })
+    setDestPin({ lat: spot.lat, lng: spot.lng, name: spot.name })
+    setCenterOn({ lat: spot.lat, lng: spot.lng })
+    setSelectedSpot(null)
+  }, [setDestination, setDestinationLatLng])
 
-  // Build map nodes
+  const hasDestOrWp = !!destination || waypoints.some((w) => w.name)
+
+  // Map nodes
   const idleNodes = IDLE_NODES.map((n) => ({
     ...n,
     color: LEVEL_COLOR[n.level],
@@ -147,8 +148,6 @@ export default function MainPage({
     onClick: () => handlePinClick(n),
   }))
 
-  // attractionPins: IDLE_NODES 기반 고정 데이터 — useMemo로 안정화
-  // 렌더마다 새 배열이 생성되면 MapboxView에서 마커 전체 재생성 → 흔들림 + 이미지 재로딩 발생
   const attractionPins = useMemo(() =>
     IDLE_NODES.map((n) => ({
       id:    n.id,
@@ -158,220 +157,124 @@ export default function MainPage({
       level: n.level,
       image: n.image,
     })),
-  []) // IDLE_NODES는 상수 — 의존성 없음
+  [])
 
   const destNode = destPin
-    ? [{
-        id: '__dest__',
-        lat: destPin.lat,
-        lng: destPin.lng,
-        name: destination,
-        pulse: false,
-        color: '#ef4444',
-        showTip: true,
-        levelLabel: 'Destination',
-      }]
+    ? [{ id: '__dest__', lat: destPin.lat, lng: destPin.lng, name: destination,
+         pulse: false, color: '#ef4444', showTip: true, levelLabel: '목적지' }]
     : []
 
-  const originNode = origin
-    ? [{
-        id: '__origin__',
-        lat: origin.lat,
-        lng: origin.lng,
-        name: origin.name,
-        pulse: false,
-        color: '#8b5cf6',
-        showTip: true,
-        levelLabel: 'Starting Point',
-      }]
-    : []
+  const allNodes = [...idleNodes, ...destNode]
 
-  const wpNodes = waypoints
-    .filter((w) => w.lat && w.lng)
-    .map((w, i) => ({
-      id: w.id,
-      lat: w.lat,
-      lng: w.lng,
-      name: w.name,
-      pulse: false,
-      color: '#3b82f6',
-      showTip: false,
-      order: i + 1,
-    }))
+  const mapPanel = (
+    <SmartMapView
+      theme={theme}
+      dark={dark}
+      nodes={allNodes}
+      congestionBars={idleNodes}
+      attractionPins={attractionPins}
+      onPinClick={handlePinClick}
+      showLocation
+      centerOn={centerOn}
+      onLocationFound={onLocationFound}
+      onCenterChange={onCenterChange}
+      style={{ flex: 1, minWidth: 0 }}
+    />
+  )
 
-  const allNodes = [...idleNodes, ...originNode, ...destNode, ...wpNodes]
+  const panelContent = selectedSpot ? (
+    <SpotMiniPanel
+      theme={theme}
+      spot={selectedSpot}
+      onClose={() => setSelectedSpot(null)}
+      onSetDestination={handleSetSpotAsDestination}
+    />
+  ) : (
+    <SearchPanel
+      theme={theme}
+      transport={transport}
+      setTransport={setTransport}
+      searchCenter={searchCenter}
+      destination={destination}
+      onDestinationSelect={handleDestinationSelect}
+      onDestinationClear={handleDestinationClear}
+      waypoints={waypoints}
+      onWaypointSelect={handleWaypointSelect}
+      addWaypoint={addWaypoint}
+      removeWaypoint={removeWaypoint}
+      hasDestOrWp={hasDestOrWp}
+      startSearch={startSearch}
+    />
+  )
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      {/* ── Header ── */}
-      <header
-        style={{
-          position: 'absolute',
-          top: 0, left: 0, right: 0,
-          zIndex: 30,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '16px 18px 12px',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          background: theme.headerGlass,
-        }}
-      >
-        <span style={{ fontSize: 19, fontWeight: 800, color: theme.text, letterSpacing: '-0.4px' }}>
-          HanGaRo
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isDesktop && (
-            <button
-              onClick={() => setSidebarOpen((s) => !s)}
-              title={sidebarOpen ? '패널 닫기' : '패널 열기'}
-              style={{
-                width: 34, height: 34, borderRadius: '50%',
-                background: sidebarOpen ? theme.primary + '18' : theme.surface,
-                border: `1px solid ${sidebarOpen ? theme.primary + '40' : theme.border}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-              aria-label="Toggle sidebar"
-            >
-              <SidebarIcon size={15} color={sidebarOpen ? theme.primary : theme.subtext} />
-            </button>
-          )}
-          <button
-            onClick={toggleDark}
-            style={{
-              width: 34, height: 34, borderRadius: '50%',
-              background: theme.surface,
-              border: `1px solid ${theme.border}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-            aria-label="Toggle dark mode"
-          >
-            {dark
-              ? <SunIcon size={15} color={theme.subtext} />
-              : <MoonIcon size={15} color={theme.subtext} />}
-          </button>
+      {/* Header */}
+      <header style={{
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '14px 18px 10px',
+        backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+        background: theme.headerGlass,
+      }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: theme.text, letterSpacing: '-0.4px' }}>
+            HanGaRo
+          </div>
+          <div style={{ fontSize: 11, color: theme.subtext, marginTop: 1 }}>
+            실시간 혼잡도 기반 여행 코스 추천
+          </div>
         </div>
+        <button onClick={toggleDark} style={{
+          width: 34, height: 34, borderRadius: '50%',
+          background: theme.surface, border: `1px solid ${theme.border}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        }}>
+          {dark ? <SunIcon size={15} color={theme.subtext} /> : <MoonIcon size={15} color={theme.subtext} />}
+        </button>
       </header>
 
-      {/* ── Map + Panel ── */}
+      {/* Body */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        <SmartMapView
-          theme={theme}
-          dark={dark}
-          nodes={allNodes}
-          congestionBars={idleNodes}
-          attractionPins={attractionPins}
-          onPinClick={handlePinClick}
-          showLocation
-          centerOn={centerOn}
-          onLocationFound={onLocationFound}
-          onCenterChange={onCenterChange}
-          style={{ flex: 1, minWidth: 0 }}
-        />
+        {mapPanel}
 
         {/* Desktop sidebar */}
-        {isDesktop && sidebarOpen && (
-          <div
-            style={{
-              width: 380,
-              height: '100%',
-              background: theme.bg,
-              borderLeft: `1px solid ${theme.border}`,
-              display: 'flex',
-              flexDirection: 'column',
-              paddingTop: 64,
-              // overflow: visible so Place dropdown (position:fixed) isn't clipped
-              overflow: 'visible',
-            }}
-          >
-            {selectedSpot ? (
-              <PlaceDetailPanel
-                theme={theme}
-                spot={selectedSpot}
-                onClose={() => setSelectedSpot(null)}
-              />
-            ) : (
-              <PanelContent
-                theme={theme}
-                transport={transport}
-                setTransport={setTransport}
-                searchCenter={searchCenter}
-                userLocation={userLocation}
-                origin={origin}
-                onOriginSelect={handleOriginSelect}
-                onOriginClear={handleOriginClear}
-                destination={destination}
-                onDestinationSelect={handleDestinationSelect}
-                onDestinationClear={handleDestinationClear}
-                waypoints={waypoints}
-                onWaypointSelect={handleWaypointSelect}
-                addWaypoint={addWaypoint}
-                removeWaypoint={removeWaypoint}
-                hasDestOrWp={hasDestOrWp}
-                ctaLabel={ctaLabel}
-                startSearch={startSearch}
-              />
-            )}
+        {isDesktop && (
+          <div style={{
+            width: 360, height: '100%',
+            background: theme.bg, borderLeft: `1px solid ${theme.border}`,
+            display: 'flex', flexDirection: 'column',
+            paddingTop: 64, overflow: 'visible',
+          }}>
+            {panelContent}
           </div>
         )}
       </div>
 
       {/* Mobile bottom sheet */}
       {!isDesktop && (
-        <div
-          ref={panelRef}
-          style={{
-            position: 'absolute',
-            left: 0, right: 0, bottom: 0,
-            height: sheetH,
-            background: theme.bg,
-            borderRadius: '20px 20px 0 0',
-            boxShadow: '0 -12px 40px rgba(0,0,0,.18)',
-            display: 'flex',
-            flexDirection: 'column',
-            zIndex: 20,
-            touchAction: 'none',
-            transition: sheetDragRef.current ? 'none' : 'height 0.25s ease',
-          }}
-        >
+        <div style={{
+          position: 'absolute', left: 0, right: 0, bottom: 0,
+          height: sheetH,
+          background: theme.bg,
+          borderRadius: '20px 20px 0 0',
+          boxShadow: '0 -8px 32px rgba(0,0,0,.15)',
+          display: 'flex', flexDirection: 'column', zIndex: 20,
+          touchAction: 'none',
+          transition: sheetDragRef.current ? 'none' : 'height 0.25s ease',
+        }}>
           <div
             onPointerDown={onHandlePointerDown}
             style={{ padding: '10px 0 4px', display: 'flex', justifyContent: 'center', cursor: 'grab' }}
           >
             <div style={{ width: 36, height: 4, borderRadius: 3, background: theme.border }} />
           </div>
-          <div style={{ flex: 1, overflow: 'hidden', display: sheetH <= SHEET_CLOSED ? 'none' : 'flex', flexDirection: 'column' }}>
-            {selectedSpot ? (
-              <PlaceDetailPanel
-                theme={theme}
-                spot={selectedSpot}
-                onClose={() => setSelectedSpot(null)}
-              />
-            ) : (
-              <PanelContent
-                theme={theme}
-                transport={transport}
-                setTransport={setTransport}
-                searchCenter={searchCenter}
-                userLocation={userLocation}
-                origin={origin}
-                onOriginSelect={handleOriginSelect}
-                onOriginClear={handleOriginClear}
-                destination={destination}
-                onDestinationSelect={handleDestinationSelect}
-                onDestinationClear={handleDestinationClear}
-                waypoints={waypoints}
-                onWaypointSelect={handleWaypointSelect}
-                addWaypoint={addWaypoint}
-                removeWaypoint={removeWaypoint}
-                hasDestOrWp={hasDestOrWp}
-                ctaLabel={ctaLabel}
-                startSearch={startSearch}
-              />
-            )}
+          <div style={{
+            flex: 1, overflow: 'hidden',
+            display: sheetH <= SHEET_CLOSED ? 'none' : 'flex',
+            flexDirection: 'column',
+          }}>
+            {panelContent}
           </div>
         </div>
       )}
@@ -379,421 +282,211 @@ export default function MainPage({
   )
 }
 
-// ── Origin Row ────────────────────────────────────────────────────────────────
-function OriginRow({ theme, userLocation, searchCenter, origin, onOriginSelect, onOriginClear }) {
-  const [editing, setEditing] = useState(false)
-
-  if (editing) {
-    return (
-      <PlaceSearchInput
-        theme={theme}
-        placeholder="Search starting point..."
-        value={origin?.name || ''}
-        onSelect={(place) => { onOriginSelect(place); setEditing(false) }}
-        onClear={() => { onOriginClear(); setEditing(false) }}
-        userLocation={searchCenter}
-        leadingSlot={
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#8b5cf6', flexShrink: 0 }} />
-        }
-      />
-    )
-  }
-
-  const label = origin?.name || (userLocation ? 'My Location' : 'Getting location...')
-  const isMyLoc = !origin
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        background: theme.surface,
-        border: `1px solid ${theme.border}`,
-        borderRadius: 12,
-        padding: '11px 14px',
-      }}
-    >
-      <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#8b5cf6', flexShrink: 0 }} />
-      <span style={{ flex: 1, fontSize: 14, color: isMyLoc ? theme.subtext : theme.text, fontStyle: isMyLoc ? 'italic' : 'normal' }}>
-        {label}
-      </span>
-      <button
-        onClick={() => setEditing(true)}
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: theme.primary,
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          padding: '2px 4px',
-          flexShrink: 0,
-        }}
-      >
-        Change
-      </button>
-    </div>
-  )
-}
-
-// ── Panel Content ─────────────────────────────────────────────────────────────
-function PanelContent({
-  theme,
-  transport,
-  setTransport,
-  searchCenter,
-  userLocation,
-  origin,
-  onOriginSelect,
-  onOriginClear,
-  destination,
-  onDestinationSelect,
-  onDestinationClear,
-  waypoints,
-  onWaypointSelect,
-  addWaypoint,
-  removeWaypoint,
-  hasDestOrWp,
-  ctaLabel,
-  startSearch,
+// ── Search Panel ──────────────────────────────────────────────────────────────
+function SearchPanel({
+  theme, transport, setTransport, searchCenter,
+  destination, onDestinationSelect, onDestinationClear,
+  waypoints, onWaypointSelect, addWaypoint, removeWaypoint,
+  hasDestOrWp, startSearch,
 }) {
   return (
-    <div
-      style={{
-        padding: '16px 18px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        flex: 1,
-        overflowY: 'auto',
-      }}
-    >
-      {/* Origin */}
-      <OriginRow
-        theme={theme}
-        userLocation={userLocation}
-        searchCenter={searchCenter}
-        origin={origin}
-        onOriginSelect={onOriginSelect}
-        onOriginClear={onOriginClear}
-      />
-
-      {/* Transport tabs */}
-      <div
-        style={{
-          display: 'flex',
-          background: theme.surface,
-          borderRadius: 12,
-          padding: 3,
-          gap: 2,
-        }}
-      >
-        {TRANSPORT_MODES.map(({ id, label, Icon }) => {
-          const active = transport === id
-          return (
-            <button
-              key={id}
-              onClick={() => setTransport(id)}
-              style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 4,
-                padding: '9px 0',
-                borderRadius: 9,
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: 'pointer',
-                border: 'none',
-                background: active ? theme.bg : 'transparent',
-                color: active ? theme.text : theme.subtext,
-                boxShadow: active ? '0 1px 4px rgba(0,0,0,.10)' : 'none',
-                transition: 'background 0.15s, color 0.15s, box-shadow 0.15s',
-              }}
-            >
-              <Icon size={17} color={active ? theme.text : theme.subtext} />
-              {label}
-            </button>
-          )
-        })}
+    <div style={{
+      padding: '20px 18px 24px', display: 'flex', flexDirection: 'column',
+      gap: 14, flex: 1, overflowY: 'auto',
+    }}>
+      {/* Heading */}
+      <div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: theme.text, marginBottom: 4 }}>
+          어디 가고 싶으세요?
+        </div>
+        <div style={{ fontSize: 12, color: theme.subtext }}>
+          목적지를 입력하거나, 바로 추천받을 수 있어요
+        </div>
       </div>
 
-      {/* Destination search */}
+      {/* Destination */}
       <PlaceSearchInput
         theme={theme}
-        placeholder="Enter destination"
+        placeholder="목적지 검색..."
         value={destination}
         onSelect={onDestinationSelect}
         onClear={onDestinationClear}
         userLocation={searchCenter}
-        leadingSlot={<MapPinIcon size={15} color={theme.subtext} />}
+        leadingSlot={<MapPinIcon size={15} color={theme.primary} />}
       />
 
       {/* Waypoints */}
       {waypoints.map((wp) =>
         wp.name ? (
-          <div
-            key={wp.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              background: theme.surface,
-              border: `1px solid ${theme.border}`,
-              borderRadius: 12,
-              padding: '11px 14px',
-            }}
-          >
-            <div
-              style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: '#3b82f6', flexShrink: 0,
-              }}
-            />
+          <div key={wp.id} style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            background: theme.surface, border: `1px solid ${theme.border}`,
+            borderRadius: 12, padding: '11px 14px',
+          }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#3b82f6', flexShrink: 0 }} />
             <span style={{ flex: 1, fontSize: 14, color: theme.text }}>{wp.name}</span>
-            <button
-              onClick={() => removeWaypoint(wp.id)}
-              style={{ display: 'flex', cursor: 'pointer', background: 'none', border: 'none', padding: 2 }}
-            >
+            <button onClick={() => removeWaypoint(wp.id)} style={{
+              display: 'flex', cursor: 'pointer', background: 'none', border: 'none', padding: 2,
+            }}>
               <XIcon size={13} color={theme.subtext} />
             </button>
           </div>
         ) : (
           <PlaceSearchInput
-            key={wp.id}
-            theme={theme}
-            placeholder="Search a stop..."
-            value=""
+            key={wp.id} theme={theme} placeholder="경유지 검색..." value=""
             onSelect={(place) => onWaypointSelect(wp.id, place)}
             onClear={() => removeWaypoint(wp.id)}
             userLocation={searchCenter}
-            leadingSlot={
-              <div
-                style={{
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: '#3b82f6', flexShrink: 0,
-                }}
-              />
-            }
+            leadingSlot={<div style={{ width: 8, height: 8, borderRadius: '50%', background: '#3b82f6', flexShrink: 0 }} />}
           />
         )
       )}
 
       {/* Add waypoint */}
-      <button
-        onClick={addWaypoint}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          color: theme.primary,
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: 'pointer',
-          background: 'none',
-          border: 'none',
-          padding: 0,
-          width: 'fit-content',
-        }}
-      >
-        <PlusIcon size={14} color={theme.primary} />
-        Add waypoint
+      <button onClick={addWaypoint} style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        color: theme.subtext, fontSize: 13, cursor: 'pointer',
+        background: 'none', border: 'none', padding: 0, width: 'fit-content',
+      }}>
+        <PlusIcon size={13} color={theme.subtext} />
+        경유지 추가
       </button>
 
-      {/* CTA */}
-      <button
-        onClick={startSearch}
-        style={{
-          marginTop: 'auto',
-          background: theme.primary,
-          color: 'white',
-          padding: '15px 0',
-          borderRadius: 12,
-          fontSize: 14,
-          fontWeight: 700,
-          cursor: 'pointer',
-          border: 'none',
-          width: '100%',
-          letterSpacing: '-0.1px',
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.88')}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-      >
-        {ctaLabel}
-      </button>
-    </div>
-  )
-}
-
-// ── Place Detail Panel ───────────────────────────────────────────────────────
-const NEARBY_CATEGORIES = [
-  { code: 'AT4', label: '관광명소' },
-  { code: 'CE7', label: '카페' },
-  { code: 'FD6', label: '음식점' },
-  { code: 'AD5', label: '숙박' },
-]
-
-function PlaceDetailPanel({ theme, spot, onClose }) {
-  const [activeTab, setActiveTab] = useState('AT4')
-  const [nearbyResults, setNearbyResults] = useState([])
-  const [loading, setLoading] = useState(false)
-
-  const searchNearby = useCallback((categoryCode) => {
-    const kakao = window.kakao
-    if (!kakao?.maps) return
-
-    const run = (services) => {
-      if (!services?.Places) return
-      const ps = new services.Places()
-      setLoading(true)
-      setNearbyResults([])
-      ps.categorySearch(
-        categoryCode,
-        (data, status) => {
-          setLoading(false)
-          if (status === services.Status.OK) {
-            setNearbyResults(data.slice(0, 6))
-          }
-        },
-        {
-          location: new kakao.maps.LatLng(spot.lat, spot.lng),
-          radius: 800,
-          sort: kakao.maps.services.SortBy?.DISTANCE,
-        }
-      )
-    }
-
-    if (kakao.maps.services?.Places) {
-      run(kakao.maps.services)
-    } else {
-      kakao.maps.load(() => run(kakao.maps.services))
-    }
-  }, [spot])
-
-  useEffect(() => {
-    searchNearby(activeTab)
-  }, [activeTab, searchNearby])
-
-  const congestionColor = {
-    quiet: '#10b981', relaxed: '#f59e0b', moderate: '#f97316', crowded: '#ef4444',
-  }[spot.level] || '#6b7280'
-
-  const congestionLabel = {
-    quiet: '한적', relaxed: '여유', moderate: '보통', crowded: '혼잡',
-  }[spot.level] || '보통'
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{ padding: '14px 16px 10px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <button
-            onClick={onClose}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: 28, height: 28, borderRadius: 8,
-              background: theme.surface, border: `1px solid ${theme.border}`,
-              cursor: 'pointer', flexShrink: 0,
-            }}
-          >
-            <XIcon size={13} color={theme.subtext} />
-          </button>
-          <span style={{ fontSize: 15, fontWeight: 700, color: theme.text, flex: 1 }}>
-            {spot.name}
-          </span>
-          <span
-            style={{
-              fontSize: 11, fontWeight: 700, color: congestionColor,
-              background: congestionColor + '18',
-              padding: '3px 8px', borderRadius: 20,
-            }}
-          >
-            {congestionLabel}
-          </span>
-        </div>
-
-        {/* Thumbnail */}
-        {spot.image && (
-          <img
-            src={spot.image}
-            alt={spot.name}
-            style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 10 }}
-          />
-        )}
-      </div>
-
-      {/* Category tabs */}
-      <div
-        style={{
-          display: 'flex', gap: 4, padding: '10px 16px 6px',
-          borderBottom: `1px solid ${theme.border}`, flexShrink: 0,
-          overflowX: 'auto',
-        }}
-      >
-        {NEARBY_CATEGORIES.map(({ code, label }) => {
-          const active = activeTab === code
+      {/* Transport */}
+      <div style={{ display: 'flex', background: theme.surface, borderRadius: 12, padding: 3, gap: 2 }}>
+        {TRANSPORT_MODES.map(({ id, label, Icon }) => {
+          const active = transport === id
           return (
-            <button
-              key={code}
-              onClick={() => setActiveTab(code)}
-              style={{
-                padding: '5px 12px',
-                borderRadius: 20,
-                fontSize: 12, fontWeight: 600,
-                cursor: 'pointer',
-                border: `1px solid ${active ? theme.primary : theme.border}`,
-                background: active ? theme.primary : 'transparent',
-                color: active ? '#fff' : theme.subtext,
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-                transition: 'background 0.15s, color 0.15s',
-              }}
-            >
+            <button key={id} onClick={() => setTransport(id)} style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 4,
+              padding: '8px 0', borderRadius: 9, fontSize: 11, fontWeight: 600,
+              cursor: 'pointer', border: 'none',
+              background: active ? theme.bg : 'transparent',
+              color: active ? theme.text : theme.subtext,
+              boxShadow: active ? '0 1px 4px rgba(0,0,0,.10)' : 'none',
+              transition: 'all 0.15s',
+            }}>
+              <Icon size={16} color={active ? theme.text : theme.subtext} />
               {label}
             </button>
           )
         })}
       </div>
 
-      {/* Nearby results */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px 20px' }}>
-        {loading && (
-          <div style={{ textAlign: 'center', padding: 20, color: theme.subtext, fontSize: 13 }}>
-            검색 중...
-          </div>
-        )}
-        {!loading && nearbyResults.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 20, color: theme.subtext, fontSize: 13 }}>
-            주변 장소를 찾을 수 없습니다.
-          </div>
-        )}
-        {nearbyResults.map((place, i) => (
-          <div
-            key={place.id || i}
-            style={{
-              padding: '10px 0',
-              borderBottom: i < nearbyResults.length - 1 ? `1px solid ${theme.border}` : 'none',
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 3 }}>
-              {place.place_name}
-            </div>
-            <div style={{ fontSize: 11, color: theme.subtext, marginBottom: place.distance ? 4 : 0 }}>
-              {place.road_address_name || place.address_name}
-            </div>
-            {place.distance && (
-              <div style={{ fontSize: 11, color: theme.primary, fontWeight: 600 }}>
-                {Number(place.distance) >= 1000
-                  ? `${(Number(place.distance) / 1000).toFixed(1)}km`
-                  : `${place.distance}m`}
-              </div>
-            )}
-          </div>
-        ))}
+      {/* CTA */}
+      <button onClick={startSearch} style={{
+        marginTop: 4,
+        background: theme.primary, color: 'white',
+        padding: '15px 0', borderRadius: 12,
+        fontSize: 14, fontWeight: 700, cursor: 'pointer', border: 'none', width: '100%',
+      }}
+        onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.88')}
+        onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+      >
+        {hasDestOrWp ? '경로 찾기 →' : '조용한 코스 추천받기 →'}
+      </button>
+
+      {/* Congestion legend */}
+      <CongestionLegend theme={theme} />
+    </div>
+  )
+}
+
+// ── Spot Mini Panel ───────────────────────────────────────────────────────────
+function SpotMiniPanel({ theme, spot, onClose, onSetDestination }) {
+  const color   = LEVEL_COLOR[spot.level] || '#6b7280'
+  const label   = LEVEL_LABEL[spot.level] || '보통'
+  const desc    = CONGESTION_DESC[spot.level] || ''
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{
+        padding: '14px 16px 12px', display: 'flex', alignItems: 'center', gap: 10,
+        borderBottom: `1px solid ${theme.border}`,
+      }}>
+        <button onClick={onClose} style={{
+          width: 30, height: 30, borderRadius: 8, display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          background: theme.surface, border: `1px solid ${theme.border}`, cursor: 'pointer', flexShrink: 0,
+        }}>
+          <XIcon size={13} color={theme.subtext} />
+        </button>
+        <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: theme.text }}>{spot.name}</span>
+        <span style={{
+          fontSize: 11, fontWeight: 700, color, background: color + '18',
+          padding: '3px 10px', borderRadius: 20,
+        }}>
+          {label}
+        </span>
       </div>
+
+      {/* Image */}
+      {spot.image && (
+        <div style={{ position: 'relative', height: 150, overflow: 'hidden', flexShrink: 0 }}>
+          <img
+            src={spot.image} alt={spot.name}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+          {/* Congestion overlay */}
+          <div style={{
+            position: 'absolute', bottom: 10, right: 10,
+            background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)',
+            borderRadius: 20, padding: '4px 10px',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'white' }}>현재 {label}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Description */}
+      <div style={{ padding: '16px', flex: 1 }}>
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: theme.text }}>{desc}</p>
+      </div>
+
+      {/* CTA */}
+      <div style={{ padding: '0 16px 20px' }}>
+        <button
+          onClick={() => onSetDestination(spot)}
+          style={{
+            width: '100%', padding: '13px 0', borderRadius: 12,
+            background: theme.primary, color: 'white',
+            fontSize: 14, fontWeight: 700, cursor: 'pointer', border: 'none',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.88')}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+        >
+          {spot.name} 목적지로 설정 →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Congestion Legend ─────────────────────────────────────────────────────────
+function CongestionLegend({ theme }) {
+  const items = [
+    { label: '한적', color: '#10b981' },
+    { label: '여유', color: '#f59e0b' },
+    { label: '보통', color: '#f97316' },
+    { label: '혼잡', color: '#ef4444' },
+  ]
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: 14, paddingTop: 4,
+      borderTop: `1px solid ${theme.border}`, marginTop: 'auto',
+    }}>
+      <span style={{ fontSize: 11, color: theme.subtext }}>혼잡도</span>
+      {items.map(({ label, color }) => (
+        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: theme.subtext }}>{label}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -815,7 +508,6 @@ function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadin
     setDropPos({ top: r.bottom + 4, left: r.left, width: r.width })
   }, [])
 
-  // Close dropdown when clicking outside (both input wrapper AND dropdown)
   useEffect(() => {
     const handler = (e) => {
       const inWrap = wrapRef.current?.contains(e.target)
@@ -826,7 +518,6 @@ function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadin
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // Update dropdown position on scroll/resize
   useEffect(() => {
     if (!open) return
     const handle = () => calcPos()
@@ -840,178 +531,86 @@ function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadin
 
   const doSearch = useCallback((q) => {
     const kakao = window.kakao
-    if (!kakao?.maps) {
-      console.warn('[Search] window.kakao.maps 없음 — Kakao 스크립트 로드 확인 필요')
-      setResults([])
-      return
-    }
-
-    // 실제 검색 실행 (services가 준비된 후 호출)
+    if (!kakao?.maps) return
     const runWithServices = (services) => {
-      if (!services?.Places) {
-        console.warn('[Search] kakao.maps.services.Places 없음 — load() 후에도 미초기화')
-        setResults([])
-        return
-      }
+      if (!services?.Places) return
       const ps = new services.Places()
       setSearching(true)
-
-      // 정확도 기준 전국 검색
-      // - radius + DISTANCE 조합은 주변 식당·가게가 실제 명소보다 상위에 오는 문제 있음
-      // - ACCURACY(기본값) 사용 시 "서울역" → 서울역 역사가 1위로 정확히 노출됨
       ps.keywordSearch(q, (data, status) => {
         setSearching(false)
         if (status === services.Status.OK && data.length > 0) {
-          setResults(data.slice(0, 5))
-          calcPos()
-          setOpen(true)
+          setResults(data.slice(0, 5)); calcPos(); setOpen(true)
         } else {
-          setResults([])
-          setOpen(false)
+          setResults([]); setOpen(false)
         }
       })
     }
-
     const services = kakao.maps.services
-    if (services?.Places) {
-      runWithServices(services)
-    } else {
-      // autoload=false 모드: SDK 초기화 후 재실행
-      console.log('[Search] kakao.maps.load() 호출 중...')
-      kakao.maps.load(() => {
-        console.log('[Search] kakao.maps.load() 완료')
-        runWithServices(kakao.maps.services)
-      })
-    }
+    if (services?.Places) runWithServices(services)
+    else kakao.maps.load(() => runWithServices(kakao.maps.services))
   }, [calcPos])
 
   const handleChange = (e) => {
-    const v = e.target.value
-    setQuery(v)
+    const v = e.target.value; setQuery(v)
     clearTimeout(timerRef.current)
-    if (v.trim()) {
-      timerRef.current = setTimeout(() => doSearch(v), 300)
-    } else {
-      setResults([])
-      setOpen(false)
-    }
+    if (v.trim()) timerRef.current = setTimeout(() => doSearch(v), 300)
+    else { setResults([]); setOpen(false) }
   }
 
   const handleSelect = (place) => {
-    const name = place.place_name
-    setQuery(name)
-    setResults([])
-    setOpen(false)
-    onSelect({
-      name,
-      lat: parseFloat(place.y),
-      lng: parseFloat(place.x),
-      address: place.road_address_name || place.address_name,
-    })
+    setQuery(place.place_name); setResults([]); setOpen(false)
+    onSelect({ name: place.place_name, lat: parseFloat(place.y), lng: parseFloat(place.x),
+      address: place.road_address_name || place.address_name })
   }
 
-  const handleClear = () => {
-    setQuery('')
-    setResults([])
-    setOpen(false)
-    onClear?.()
-  }
-
+  const handleClear = () => { setQuery(''); setResults([]); setOpen(false); onClear?.() }
   const showDropdown = open && results.length > 0 && dropPos
 
   return (
     <>
-      <div
-        ref={wrapRef}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          background: theme.surface,
-          border: `1px solid ${showDropdown ? theme.primary : theme.border}`,
-          borderRadius: 12,
-          padding: '11px 14px',
-          transition: 'border-color 0.15s',
-        }}
-      >
+      <div ref={wrapRef} style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        background: theme.surface, border: `1px solid ${showDropdown ? theme.primary : theme.border}`,
+        borderRadius: 12, padding: '12px 14px', transition: 'border-color 0.15s',
+      }}>
         {leadingSlot}
         <input
-          value={query}
-          onChange={handleChange}
-          onFocus={() => {
-            if (results.length > 0) { calcPos(); setOpen(true) }
-          }}
-          placeholder={placeholder}
-          autoComplete="off"
-          style={{
-            flex: 1,
-            border: 'none',
-            outline: 'none',
-            background: 'transparent',
-            fontSize: 14,
-            color: theme.text,
-          }}
+          value={query} onChange={handleChange}
+          onFocus={() => { if (results.length > 0) { calcPos(); setOpen(true) } }}
+          placeholder={placeholder} autoComplete="off"
+          style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 14, color: theme.text }}
         />
         {searching && (
-          <div
-            style={{
-              width: 13, height: 13, borderRadius: '50%',
-              border: `2px solid ${theme.border}`,
-              borderTopColor: theme.primary,
-              animation: 'spin 0.8s linear infinite',
-              flexShrink: 0,
-            }}
-          />
+          <div style={{
+            width: 13, height: 13, borderRadius: '50%',
+            border: `2px solid ${theme.border}`, borderTopColor: theme.primary,
+            animation: 'spin 0.8s linear infinite', flexShrink: 0,
+          }} />
         )}
         {query && !searching && (
-          <button
-            onClick={handleClear}
-            style={{ display: 'flex', cursor: 'pointer', background: 'none', border: 'none', padding: 2 }}
-          >
+          <button onClick={handleClear} style={{ display: 'flex', cursor: 'pointer', background: 'none', border: 'none', padding: 2 }}>
             <XIcon size={13} color={theme.subtext} />
           </button>
         )}
       </div>
 
       {showDropdown && createPortal(
-        <div
-          ref={dropRef}
-          style={{
-            position: 'fixed',
-            top: dropPos.top,
-            left: dropPos.left,
-            width: dropPos.width,
-            zIndex: 9999,
-            background: theme.bg,
-            border: `1px solid ${theme.primary}`,
-            borderRadius: 12,
-            boxShadow: '0 8px 28px rgba(0,0,0,.18)',
-            overflow: 'hidden',
-          }}
-        >
+        <div ref={dropRef} style={{
+          position: 'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width,
+          zIndex: 9999, background: theme.bg, border: `1px solid ${theme.primary}`,
+          borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,.18)', overflow: 'hidden',
+        }}>
           {results.map((place, i) => (
-            <button
-              key={place.id || i}
-              onClick={() => handleSelect(place)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                width: '100%',
-                padding: '10px 14px',
-                gap: 3,
-                background: 'none',
-                border: 'none',
-                borderBottom: i < results.length - 1 ? `1px solid ${theme.border}` : 'none',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
+            <button key={place.id || i} onClick={() => handleSelect(place)} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+              width: '100%', padding: '10px 14px', gap: 3, background: 'none', border: 'none',
+              borderBottom: i < results.length - 1 ? `1px solid ${theme.border}` : 'none',
+              cursor: 'pointer', textAlign: 'left',
+            }}
               onMouseEnter={(e) => (e.currentTarget.style.background = theme.surface)}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
             >
-              <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
-                {place.place_name}
-              </span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>{place.place_name}</span>
               {(place.road_address_name || place.address_name) && (
                 <span style={{ fontSize: 11, color: theme.subtext }}>
                   {place.road_address_name || place.address_name}
