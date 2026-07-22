@@ -34,3 +34,9 @@ env/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ── Design / Prototype ────────────────────────────────────────────────────────
+frontend/design/
+
+# ── Claude Code internal ──────────────────────────────────────────────────────
+.claude/
