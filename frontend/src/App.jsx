@@ -54,12 +54,12 @@ export const LEVEL_LABEL = {
 }
 
 export const IDLE_NODES = [
-  { id: 'gb', name: 'Gyeongbokgung',        lat: 37.5796, lng: 126.9770, x: 44, y: 30, level: 'crowded' },
-  { id: 'bc', name: 'Bukchon Hanok Village', lat: 37.5826, lng: 126.9830, x: 58, y: 24, level: 'moderate' },
-  { id: 'is', name: 'Insadong',              lat: 37.5740, lng: 126.9858, x: 62, y: 44, level: 'moderate' },
-  { id: 'cd', name: 'Changdeokgung',         lat: 37.5794, lng: 126.9910, x: 70, y: 32, level: 'quiet' },
-  { id: 'np', name: 'Naksan Park',           lat: 37.5804, lng: 127.0072, x: 80, y: 48, level: 'quiet' },
-  { id: 'im', name: 'Ihwa Village',          lat: 37.5773, lng: 127.0070, x: 76, y: 62, level: 'relaxed' },
+  { id: 'gb', name: '경복궁',        lat: 37.5796, lng: 126.9770, x: 44, y: 30, level: 'crowded',  image: 'https://picsum.photos/seed/gyeongbokgung/160/110' },
+  { id: 'bc', name: '북촌한옥마을',  lat: 37.5826, lng: 126.9830, x: 58, y: 24, level: 'moderate', image: 'https://picsum.photos/seed/bukchon/160/110' },
+  { id: 'is', name: '인사동',        lat: 37.5740, lng: 126.9858, x: 62, y: 44, level: 'moderate', image: 'https://picsum.photos/seed/insadong/160/110' },
+  { id: 'cd', name: '창덕궁',        lat: 37.5794, lng: 126.9910, x: 70, y: 32, level: 'quiet',    image: 'https://picsum.photos/seed/changdeok/160/110' },
+  { id: 'np', name: '낙산공원',      lat: 37.5804, lng: 127.0072, x: 80, y: 48, level: 'quiet',    image: 'https://picsum.photos/seed/naksan/160/110' },
+  { id: 'im', name: '이화마을',      lat: 37.5773, lng: 127.0070, x: 76, y: 62, level: 'relaxed',  image: 'https://picsum.photos/seed/ihwa/160/110' },
 ]
 
 export const MAP_BLOCKS = [

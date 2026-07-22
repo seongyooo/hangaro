@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import SmartMapView from '../components/map/SmartMapView'
 import {
@@ -134,6 +134,19 @@ export default function MainPage({
     onClick: () => setTipNodeId(tipNodeId === n.id ? null : n.id),
   }))
 
+  // attractionPins: IDLE_NODES 기반 고정 데이터 — useMemo로 안정화
+  // 렌더마다 새 배열이 생성되면 MapboxView에서 마커 전체 재생성 → 흔들림 + 이미지 재로딩 발생
+  const attractionPins = useMemo(() =>
+    IDLE_NODES.map((n) => ({
+      id:    n.id,
+      name:  n.name,
+      lat:   n.lat,
+      lng:   n.lng,
+      level: n.level,
+      image: n.image,
+    })),
+  []) // IDLE_NODES는 상수 — 의존성 없음
+
   const destNode = destPin
     ? [{
         id: '__dest__',
@@ -219,6 +232,7 @@ export default function MainPage({
           dark={dark}
           nodes={allNodes}
           congestionBars={idleNodes}
+          attractionPins={attractionPins}
           showLocation
           centerOn={centerOn}
           onLocationFound={onLocationFound}

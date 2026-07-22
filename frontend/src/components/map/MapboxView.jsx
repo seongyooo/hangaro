@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { LEVEL_COLOR } from '../../App'
+import { LEVEL_COLOR, LEVEL_LABEL } from '../../App'
 
 const MAPBOX_TOKEN   = import.meta.env.VITE_MAPBOX_TOKEN ?? ''
 const SEOUL          = { lat: 37.5665, lng: 126.9780 }
@@ -52,11 +52,118 @@ function buildMarkerEl(node) {
 
 // ── 컴포넌트 ──────────────────────────────────────────────────────────────────
 
+// ── Callout 카드 마커 빌더 ───────────────────────────────────────────────────
+// 구조: 3D CSS perspective 카드 → 수직 stem → 좌표 dot
+// hover transform 없음 — Mapbox 마커 위치 계산과 충돌 방지
+function buildCalloutEl(pin, color) {
+  // ── 최상위 래퍼: pointer-events none, 레이아웃만 담당 ──────────────────
+  const wrap = document.createElement('div')
+  wrap.style.cssText = [
+    'display:flex;flex-direction:column;align-items:center;',
+    'pointer-events:none;',   // 마우스 이벤트는 카드에서만
+  ].join('')
+
+  // ── 카드: 3D perspective 기울기 ──────────────────────────────────────────
+  const card = document.createElement('div')
+  card.style.cssText = [
+    'width:130px;border-radius:14px;overflow:hidden;',
+    'pointer-events:auto;cursor:pointer;',
+    // 3D perspective — 카드가 공중에서 앞으로 기울어 보이는 효과
+    'transform:perspective(500px) rotateX(6deg);',
+    'transform-origin:bottom center;',
+    // 깊이감 그림자 (여러 레이어)
+    'box-shadow:',
+    '  0 2px 0 rgba(0,0,0,0.06),',
+    '  0 6px 16px rgba(0,0,0,0.18),',
+    '  0 20px 40px rgba(0,0,0,0.22);',
+    // 등장 애니메이션
+    'animation:calloutFadeIn 0.45s cubic-bezier(0.34,1.4,0.64,1) both;',
+  ].join('')
+
+  // 클릭 이벤트가 지도로 전파되지 않도록 차단
+  card.addEventListener('mousedown', (e) => e.stopPropagation())
+  card.addEventListener('click',     (e) => e.stopPropagation())
+
+  // ── 사진 영역 ────────────────────────────────────────────────────────────
+  const photoWrap = document.createElement('div')
+  photoWrap.style.cssText = 'position:relative;width:130px;height:86px;overflow:hidden;background:#1e293b;'
+
+  if (pin.image) {
+    const img = document.createElement('img')
+    img.src   = pin.image
+    img.alt   = pin.name
+    // loading=lazy: 뷰포트 밖에서는 로딩하지 않음
+    img.loading = 'lazy'
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;'
+    photoWrap.appendChild(img)
+  }
+
+  // 사진 위 그라데이션 오버레이 — 텍스트 가독성 확보
+  const overlay = document.createElement('div')
+  overlay.style.cssText = [
+    'position:absolute;inset:0;',
+    'background:linear-gradient(to bottom,transparent 25%,rgba(0,0,0,0.72) 100%);',
+  ].join('')
+  photoWrap.appendChild(overlay)
+
+  // ── 이름 + 혼잡도 배지 (사진 위 오버레이) ────────────────────────────────
+  const infoRow = document.createElement('div')
+  infoRow.style.cssText = [
+    'position:absolute;bottom:0;left:0;right:0;',
+    'padding:7px 9px 8px;',
+    'display:flex;align-items:flex-end;justify-content:space-between;gap:4px;',
+  ].join('')
+
+  const nameEl = document.createElement('span')
+  nameEl.style.cssText = [
+    'font-size:12px;font-weight:800;color:white;',
+    'letter-spacing:-0.4px;line-height:1.25;',
+    'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
+    'text-shadow:0 1px 4px rgba(0,0,0,0.5);',
+  ].join('')
+  nameEl.textContent = pin.name
+
+  const badge = document.createElement('span')
+  badge.style.cssText = [
+    `background:${color};color:white;`,
+    'font-size:9.5px;font-weight:700;',
+    'padding:2px 6px;border-radius:6px;flex-shrink:0;',
+    'letter-spacing:-0.2px;',
+  ].join('')
+  badge.textContent = LEVEL_LABEL[pin.level] || ''
+
+  infoRow.appendChild(nameEl)
+  infoRow.appendChild(badge)
+  photoWrap.appendChild(infoRow)
+  card.appendChild(photoWrap)
+
+  // ── 수직 stem ─────────────────────────────────────────────────────────────
+  const stem = document.createElement('div')
+  stem.style.cssText = [
+    'width:2px;height:28px;',
+    `background:linear-gradient(to bottom,${color}dd,${color}11);`,
+  ].join('')
+
+  // ── 좌표 dot ──────────────────────────────────────────────────────────────
+  const dot = document.createElement('div')
+  dot.style.cssText = [
+    'width:8px;height:8px;border-radius:50%;flex-shrink:0;',
+    `background:${color};border:2px solid white;`,
+    `box-shadow:0 0 0 2px ${color}44,0 2px 6px ${color}66;`,
+  ].join('')
+
+  wrap.appendChild(card)
+  wrap.appendChild(stem)
+  wrap.appendChild(dot)
+  return wrap
+}
+
 export default function MapboxView({
   theme,
   dark         = false,
   nodes        = [],
   congestionBars = [],
+  attractionPins = [],   // 관광지 callout 카드 핀 [{id,name,lat,lng,image,level},...]
   showLocation = false,
   routeNodes   = null,
   routePath    = null,
@@ -72,6 +179,7 @@ export default function MapboxView({
   const containerRef  = useRef(null)
   const mapRef        = useRef(null)
   const markersRef    = useRef([])
+  const calloutRef    = useRef([])   // callout 카드 마커 목록
   const locMarkerRef  = useRef(null)
   const [ready, setReady] = useState(false)
 
@@ -91,6 +199,8 @@ export default function MapboxView({
       pitch:     50,
       bearing:   -10,
       antialias: true,
+      // 대한민국 영역으로 패닝 제한
+      maxBounds: [[124.5, 33.0], [132.0, 38.9]],
     })
 
     // 피치·방향 조작 컨트롤 (우상단) — 나침반, 줌, 피치 슬라이더
@@ -217,6 +327,7 @@ export default function MapboxView({
 
     return () => {
       markersRef.current.forEach((m) => m.remove())
+      calloutRef.current.forEach((m) => m.remove())
       locMarkerRef.current?.remove()
       map.remove()
       mapRef.current = null
@@ -232,6 +343,52 @@ export default function MapboxView({
     })
     ro.observe(containerRef.current)
     return () => ro.disconnect()
+  }, [ready])
+
+  // ── 관광지 Callout 카드 마커 생성 ───────────────────────────────────────
+  const CALLOUT_MIN_ZOOM = 13  // 이 줌 레벨 미만에서는 카드 숨김
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map) return
+
+    calloutRef.current.forEach((m) => m.remove())
+    calloutRef.current = []
+
+    const visible = map.getZoom() >= CALLOUT_MIN_ZOOM
+
+    attractionPins
+      .filter((p) => p.lat != null && p.lng != null)
+      .forEach((pin) => {
+        const color = LEVEL_COLOR[pin.level] || '#10b981'
+        const el = buildCalloutEl(pin, color)
+
+        el.style.display = visible ? 'flex' : 'none'
+
+        if (pin.onClick) el.addEventListener('click', (e) => { e.stopPropagation(); pin.onClick() })
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([pin.lng, pin.lat])
+          .addTo(map)
+        calloutRef.current.push(marker)
+      })
+  }, [ready, attractionPins])
+
+  // ── 줌아웃 시 callout 카드 숨김 ──────────────────────────────────────────
+  // 'zoom' 이벤트: 스크롤 중에도 실시간 발화 → 즉각 숨김/표시
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map) return
+
+    const onZoom = () => {
+      const show = map.getZoom() >= CALLOUT_MIN_ZOOM
+      calloutRef.current.forEach((m) => {
+        m.getElement().style.display = show ? 'flex' : 'none'
+      })
+    }
+
+    map.on('zoom', onZoom)
+    return () => map.off('zoom', onZoom)
   }, [ready])
 
   // ── centerOn 변경 → 지도 이동 ─────────────────────────────────────────────
@@ -278,8 +435,11 @@ export default function MapboxView({
     markersRef.current.forEach((m) => m.remove())
     markersRef.current = []
 
-    // congestionBars로 이미 표현된 노드는 HTML 마커로 중복 표시 안 함
-    const barIds = new Set(congestionBars.map((b) => b.id))
+    // congestionBars 또는 attractionPins로 이미 표현된 노드는 중복 표시 안 함
+    const barIds = new Set([
+      ...congestionBars.map((b) => b.id),
+      ...attractionPins.map((p) => p.id),
+    ])
 
     nodes
       .filter((n) => !barIds.has(n.id) && n.lat != null && n.lng != null)
@@ -291,7 +451,7 @@ export default function MapboxView({
           .addTo(map)
         markersRef.current.push(m)
       })
-  }, [ready, nodes, congestionBars])
+  }, [ready, nodes, congestionBars, attractionPins])
 
   // ── 경로 업데이트 ─────────────────────────────────────────────────────────
   useEffect(() => {

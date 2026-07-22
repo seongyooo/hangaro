@@ -83,3 +83,15 @@ body {
 .spinner {
   animation: spin 0.8s linear infinite;
 }
+
+/* 관광지 Callout 카드 등장 애니메이션 (3D perspective 상태 유지) */
+@keyframes calloutFadeIn {
+  from {
+    opacity: 0;
+    transform: perspective(500px) rotateX(6deg) translateY(14px) scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(500px) rotateX(6deg) translateY(0) scale(1);
+  }
+}
