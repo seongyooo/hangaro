@@ -1,6 +1,6 @@
 # HanGaRo — 기술 구현 상세
 
-> 프로젝트 개요 및 설정은 [README.md](./README.md) 참조  
+> 프로젝트 개요 및 설정은 [README.md](../README.md) 참조  
 > 최종 업데이트: 2026-07-22
 
 ---

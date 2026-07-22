@@ -100,8 +100,10 @@ hangaro/
 │       ├── graph/             # dijkstra.py / builder.py
 │       └── services/          # kto_api / congestion_service / recommender
 ├── README.md          # 본 문서
-├── IMPLEMENTATION.md  # 기술 구현 상세
-└── PIPELINE.md        # 시스템 파이프라인 정의
+└── docs/
+    ├── IMPLEMENTATION.md  # 기술 구현 상세
+    ├── PIPELINE.md        # 시스템 파이프라인 정의
+    └── UX_FLOW.md         # UX 흐름 정의
 ```
 
 ---
@@ -164,5 +166,6 @@ uvicorn app.main:app --reload --port 8000
 
 ## 관련 문서
 
-- [PIPELINE.md](./PIPELINE.md) — 전체 데이터 파이프라인 및 알고리즘 흐름
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md) — 컴포넌트별 기술 구현 상세, 버그 수정 이력
+- [docs/PIPELINE.md](./docs/PIPELINE.md) — 전체 데이터 파이프라인 및 알고리즘 흐름
+- [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) — 컴포넌트별 기술 구현 상세, 버그 수정 이력
+- [docs/UX_FLOW.md](./docs/UX_FLOW.md) — UX 흐름 정의
