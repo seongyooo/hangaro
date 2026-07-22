@@ -1,25 +1,23 @@
 /**
  * KakaoMapView
- * - VITE_KAKAO_MAP_KEY 있으면 실제 카카오 지도 렌더링
- * - 없으면 MapCanvas 플레이스홀더로 폴백
+ * - GPS + SDK 병렬 로드 → GPS 위치로 지도 생성 (서울 선로딩 없음)
+ * - idle 이벤트로 현재 지도 중심 추적 → 검색 기준으로 사용
+ * - VITE_KAKAO_MAP_KEY 없으면 MapCanvas 플레이스홀더로 폴백
  */
 import { useEffect, useRef, useState } from 'react'
 import MapCanvas from './MapCanvas'
 import { LEVEL_COLOR, LEVEL_LABEL, MAP_BLOCKS } from '../../App'
 
 const KAKAO_APP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY ?? ''
+const SEOUL = { lat: 37.5665, lng: 126.9780 }
 
 // SDK는 index.html에서 로드됨 — window.kakao가 준비될 때까지 대기
 let sdkPromise = null
 function waitForKakaoSDK() {
   if (sdkPromise) return sdkPromise
   sdkPromise = new Promise((resolve, reject) => {
-    // 이미 초기화된 경우
     if (window.kakao?.maps?.Map) { resolve(); return }
-    // 스크립트는 로드됐지만 아직 maps.load() 호출 전
     if (window.kakao?.maps) { window.kakao.maps.load(resolve); return }
-
-    // index.html 스크립트 로드 완료를 폴링으로 대기
     let waited = 0
     const timer = setInterval(() => {
       waited += 100
@@ -29,14 +27,24 @@ function waitForKakaoSDK() {
       } else if (waited >= 10000) {
         clearInterval(timer)
         sdkPromise = null
-        reject(new Error('Kakao SDK 로드 타임아웃 — 키와 도메인 등록을 확인하세요'))
+        reject(new Error('Kakao SDK 로드 타임아웃'))
       }
     }, 100)
   })
   return sdkPromise
 }
 
-const CENTER = { lat: 37.5760, lng: 126.9860 } // 경복궁 인근
+// GPS 현재 위치 요청 — maximumAge로 캐시 우선 사용 (빠름)
+function requestGPS(timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null)
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude }),
+      () => resolve(null),
+      { timeout: timeoutMs, maximumAge: 300000, enableHighAccuracy: false }
+    )
+  })
+}
 
 export default function KakaoMapView({
   theme,
@@ -45,6 +53,9 @@ export default function KakaoMapView({
   routeNodes = null,
   planColor = '#22c55e',
   centerOn = null,
+  fitBoundsToNodes = false,
+  onLocationFound = null,
+  onCenterChange = null,
   style,
   children,
 }) {
@@ -53,29 +64,63 @@ export default function KakaoMapView({
   const overlaysRef   = useRef([])
   const polylineRef   = useRef(null)
   const locOverlayRef = useRef(null)
-  const [ready, setReady] = useState(false)
-  const [error, setError] = useState(null)
+  const [ready, setReady]     = useState(false)
+  const [error, setError]     = useState(null)
+  const [gpsLoc, setGpsLoc]   = useState(null)  // GPS 해결 후 blue dot 트리거
 
-  // ── 지도 초기화 ─────────────────────────────────────────────────────────────
+  // ── 지도 초기화 (GPS + SDK 병렬) ────────────────────────────────────────────
   useEffect(() => {
     if (!KAKAO_APP_KEY) return
     let cancelled = false
 
-    waitForKakaoSDK()
-      .then(() => {
+    // GPS는 showLocation일 때만, 최대 3초까지 기다린 뒤 지도 생성
+    const gpsPromise = showLocation
+      ? Promise.race([requestGPS(5000), new Promise((r) => setTimeout(() => r(null), 3000))])
+      : Promise.resolve(null)
+
+    Promise.all([waitForKakaoSDK(), gpsPromise])
+      .then(([, gpsPos]) => {
         if (cancelled || !mapDivRef.current || mapRef.current) return
-        // DOM 레이아웃이 완료된 뒤 지도 생성
+
+        const initialCenter = gpsPos || SEOUL
+
         requestAnimationFrame(() => {
           if (cancelled || !mapDivRef.current || mapRef.current) return
           try {
-            const map = new window.kakao.maps.Map(mapDivRef.current, {
-              center: new window.kakao.maps.LatLng(CENTER.lat, CENTER.lng),
+            const kakao = window.kakao
+            const map = new kakao.maps.Map(mapDivRef.current, {
+              center: new kakao.maps.LatLng(initialCenter.lat, initialCenter.lng),
               level: 5,
             })
-            // 컨테이너 크기 반영
             map.relayout()
             mapRef.current = map
             setReady(true)
+
+            // 지도 이동 완료(idle) 시 현재 중심 좌표 전달
+            if (onCenterChange) {
+              kakao.maps.event.addListener(map, 'idle', () => {
+                const c = map.getCenter()
+                onCenterChange(c.getLat(), c.getLng())
+              })
+              // 초기 중심도 바로 전달
+              onCenterChange(initialCenter.lat, initialCenter.lng)
+            }
+
+            if (gpsPos) {
+              setGpsLoc(gpsPos)
+              onLocationFound?.(gpsPos.lat, gpsPos.lng)
+            } else if (showLocation) {
+              // 3초 안에 GPS 응답 없으면 백그라운드에서 계속 기다림
+              requestGPS(10000).then((pos) => {
+                if (!pos || cancelled || !mapRef.current) return
+                mapRef.current.setCenter(
+                  new window.kakao.maps.LatLng(pos.lat, pos.lng)
+                )
+                setGpsLoc(pos)
+                onLocationFound?.(pos.lat, pos.lng)
+                onCenterChange?.(pos.lat, pos.lng)
+              })
+            }
           } catch (e) {
             console.error('[KakaoMapView] Map creation failed:', e)
             setError(e.message || 'Map creation failed')
@@ -89,13 +134,12 @@ export default function KakaoMapView({
 
     return () => {
       cancelled = true
-      // 언마운트 시 오버레이 정리
       overlaysRef.current.forEach((o) => o.setMap(null))
       if (polylineRef.current) polylineRef.current.setMap(null)
       if (locOverlayRef.current) locOverlayRef.current.setMap(null)
       mapRef.current = null
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 지도 중심 이동 (장소 선택 시) ───────────────────────────────────────────
   useEffect(() => {
@@ -103,7 +147,7 @@ export default function KakaoMapView({
     mapRef.current.panTo(new window.kakao.maps.LatLng(centerOn.lat, centerOn.lng))
   }, [ready, centerOn])
 
-  // 컨테이너 리사이즈 시 relayout
+  // ── 컨테이너 리사이즈 ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!ready || !mapDivRef.current) return
     const ro = new ResizeObserver(() => mapRef.current?.relayout())
@@ -111,7 +155,37 @@ export default function KakaoMapView({
     return () => ro.disconnect()
   }, [ready])
 
-  // ── 혼잡도 노드 오버레이 ─────────────────────────────────────────────────────
+  // ── 현재 위치 오버레이 (파란 점) ────────────────────────────────────────────
+  useEffect(() => {
+    if (!ready || !mapRef.current || !showLocation || !gpsLoc) return
+    const kakao = window.kakao
+
+    if (locOverlayRef.current) locOverlayRef.current.setMap(null)
+
+    const wrap = document.createElement('div')
+    wrap.style.cssText = 'position:relative;width:14px;height:14px;'
+
+    const ring = document.createElement('div')
+    ring.className = 'ripple-wave'
+    ring.style.cssText = 'position:absolute;inset:-14px;border-radius:50%;border:2px solid #3b82f6;pointer-events:none;'
+    wrap.appendChild(ring)
+
+    const dot = document.createElement('div')
+    dot.style.cssText = 'position:absolute;inset:0;border-radius:50%;background:#3b82f6;border:2px solid white;box-shadow:0 2px 6px rgba(59,130,246,.5);'
+    wrap.appendChild(dot)
+
+    const overlay = new kakao.maps.CustomOverlay({
+      position: new kakao.maps.LatLng(gpsLoc.lat, gpsLoc.lng),
+      content: wrap,
+      yAnchor: 0.5,
+      xAnchor: 0.5,
+      zIndex: 10,
+    })
+    overlay.setMap(mapRef.current)
+    locOverlayRef.current = overlay
+  }, [ready, showLocation, gpsLoc])
+
+  // ── 혼잡도 노드 오버레이 ──────────────────────────────────────────────────
   useEffect(() => {
     if (!ready || !mapRef.current) return
     const kakao = window.kakao
@@ -162,7 +236,7 @@ export default function KakaoMapView({
     })
   }, [ready, nodes])
 
-  // ── 경로 폴리라인 ───────────────────────────────────────────────────────────
+  // ── 경로 폴리라인 ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!ready || !mapRef.current) return
     const kakao = window.kakao
@@ -172,7 +246,7 @@ export default function KakaoMapView({
     if (routeNodes?.length >= 2) {
       const path = routeNodes
         .filter((n) => n.lat != null && n.lng != null)
-        .map((n)  => new kakao.maps.LatLng(n.lat, n.lng))
+        .map((n) => new kakao.maps.LatLng(n.lat, n.lng))
 
       if (path.length >= 2) {
         const pl = new kakao.maps.Polyline({
@@ -188,46 +262,16 @@ export default function KakaoMapView({
     }
   }, [ready, routeNodes, planColor])
 
-  // ── 현재 위치 오버레이 ──────────────────────────────────────────────────────
+  // ── routeNodes 전체를 화면에 맞추기 ─────────────────────────────────────────
   useEffect(() => {
-    if (!ready || !mapRef.current || !showLocation) return
+    if (!ready || !mapRef.current || !fitBoundsToNodes || !routeNodes?.length) return
     const kakao = window.kakao
-
-    const render = (lat, lng) => {
-      if (locOverlayRef.current) locOverlayRef.current.setMap(null)
-
-      const wrap = document.createElement('div')
-      wrap.style.cssText = 'position:relative;width:14px;height:14px;'
-
-      const ring = document.createElement('div')
-      ring.className = 'ripple-wave'
-      ring.style.cssText = 'position:absolute;inset:-14px;border-radius:50%;border:2px solid #3b82f6;pointer-events:none;'
-      wrap.appendChild(ring)
-
-      const dot = document.createElement('div')
-      dot.style.cssText = 'position:absolute;inset:0;border-radius:50%;background:#3b82f6;border:2px solid white;box-shadow:0 2px 6px rgba(59,130,246,.5);'
-      wrap.appendChild(dot)
-
-      const overlay = new kakao.maps.CustomOverlay({
-        position: new kakao.maps.LatLng(lat, lng),
-        content: wrap,
-        yAnchor: 0.5,
-        xAnchor: 0.5,
-        zIndex: 10,
-      })
-      overlay.setMap(mapRef.current)
-      locOverlayRef.current = overlay
-    }
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => render(pos.coords.latitude, pos.coords.longitude),
-        ()    => render(37.5665, 126.9780)
-      )
-    } else {
-      render(37.5665, 126.9780)
-    }
-  }, [ready, showLocation])
+    const bounds = new kakao.maps.LatLngBounds()
+    routeNodes
+      .filter((n) => n.lat != null && n.lng != null)
+      .forEach((n) => bounds.extend(new kakao.maps.LatLng(n.lat, n.lng)))
+    try { mapRef.current.setBounds(bounds, 80) } catch (_) {}
+  }, [ready, fitBoundsToNodes, routeNodes])
 
   // ── 키 없음: 플레이스홀더 폴백 ──────────────────────────────────────────────
   if (!KAKAO_APP_KEY) {

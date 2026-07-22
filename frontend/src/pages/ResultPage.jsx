@@ -10,6 +10,7 @@ import {
 import {
   IDLE_NODES,
   PLAN_META,
+  LEVEL_COLOR,
 } from '../App'
 
 const DESKTOP_BREAKPOINT = 768
@@ -20,6 +21,8 @@ function ConnectorIcon({ type, color }) {
   if (type === 'car') return <CarIcon size={13} color={color} />
   return null
 }
+
+const LABEL_TO_LEVEL = { '한적': 'quiet', '여유': 'relaxed', '보통': 'moderate', '혼잡': 'crowded' }
 
 export default function ResultPage({
   theme,
@@ -33,6 +36,9 @@ export default function ResultPage({
   switchBufferRoute,
   keepOriginal,
   resultWaypoints,
+  resultSpots = [],       // API 실제 관광지 (lat/lng/congestion_label 포함)
+  originNode = null,      // { lat, lng } 출발지
+  apiStats = null,        // { congestion_avg, reduction_pct }
   dragWpId,
   onWpPointerDown,
 }) {
@@ -71,21 +77,46 @@ export default function ResultPage({
   const planMeta = PLAN_META[plan]
   const planColor = planMeta.color
 
-  const nodesResult = IDLE_NODES.slice(0, 4).map((n, i) => ({
-    ...n,
-    order: i + 1,
-    color: planColor,
-    pulse: false,
-    showTip: false,
-  }))
+  // 실제 API 결과가 있으면 사용, 없으면 IDLE_NODES 데모 폴백
+  const hasRealSpots = resultSpots.length > 0
+  const nodesResult = hasRealSpots
+    ? resultSpots.map((spot, i) => ({
+        id: spot.id,
+        name: spot.name,
+        lat: spot.lat,
+        lng: spot.lng,
+        order: i + 1,
+        color: LEVEL_COLOR[LABEL_TO_LEVEL[spot.congestion_label]] || planColor,
+        level: LABEL_TO_LEVEL[spot.congestion_label] || 'moderate',
+        pulse: false,
+        showTip: false,
+      }))
+    : IDLE_NODES.slice(0, 4).map((n, i) => ({
+        ...n,
+        order: i + 1,
+        color: planColor,
+        pulse: false,
+        showTip: false,
+      }))
 
-  const congestionVal = bufferApplied ? '−73%' : '−61%'
-  const avgVal = bufferApplied ? '0.19' : plan === 'A' ? '0.28' : plan === 'B' ? '0.41' : '0.33'
+  // 폴리라인: 출발지 + 관광지 순서
+  const routeNodes = hasRealSpots
+    ? [...(originNode ? [{ ...originNode, id: '__origin__' }] : []), ...nodesResult]
+    : IDLE_NODES.slice(0, 4)
+
+  const congestionVal = bufferApplied
+    ? '−73%'
+    : apiStats
+      ? `${apiStats.reduction_pct > 0 ? '−' : '+'}${Math.abs(apiStats.reduction_pct).toFixed(1)}%`
+      : '−61%'
+  const avgVal = bufferApplied
+    ? '0.19'
+    : apiStats
+      ? apiStats.congestion_avg.toFixed(2)
+      : plan === 'A' ? '0.28' : plan === 'B' ? '0.41' : '0.33'
   const showBufferAlert = plan === 'A' && !bufferDismissed
 
   // ── Shared sub-components ────────────────────────────────────────────────────
-
-  const routeNodes = IDLE_NODES.slice(0, 4)
 
   const MapArea = ({ style }) => (
     <div style={{ position: 'relative', overflow: 'hidden', ...style }}>
@@ -95,6 +126,7 @@ export default function ResultPage({
         showLocation={false}
         routeNodes={routeNodes}
         planColor={planColor}
+        fitBoundsToNodes={hasRealSpots}
         style={{ width: '100%', height: '100%' }}
       />
 

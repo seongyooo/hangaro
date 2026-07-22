@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     CONGESTION_TTL: int = 300  # 5분
 
     # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
     class Config:
         env_file = ".env"

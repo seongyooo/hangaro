@@ -48,7 +48,7 @@ async def recommend_fixed_destination(
 
     message = None
     if dest_data["congestion"] > CONGESTION_THRESHOLD:
-        clear_dt = await predict_clear_time(destination_id, dest_data["category"], dt)
+        clear_dt = await predict_clear_time(region_code, "", dest_data["name"], dest_data["category"], dt)
         buffer_min = int((clear_dt - dt).total_seconds() / 60)
         buffer_nodes = find_buffer_nodes(G, destination_id, buffer_min)
 
@@ -106,7 +106,7 @@ def _build_response(spots: list[dict], course_ids: list[str], G, message=None) -
     spot_map = {s["id"]: s for s in spots}
     course_spots = [
         SpotWithCongestion(
-            **{k: v for k, v in spot_map[sid].items() if k != "hidden_gem_score"},
+            **spot_map[sid],
             congestion_label=get_congestion_label(spot_map[sid]["congestion"]),
         )
         for sid in course_ids if sid in spot_map

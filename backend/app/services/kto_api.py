@@ -15,7 +15,7 @@ COMMON = {
 
 # 지역/시군구 코드 테이블 (엑셀 원본 → area_codes.json 변환본)
 _AREA_CODES: list[dict] = json.loads(
-    (Path(__file__).parent.parent.parent.parent.parent / "data" / "area_codes.json").read_text(encoding="utf-8")
+    (Path(__file__).parent.parent.parent.parent / "data" / "area_codes.json").read_text(encoding="utf-8")
 )
 
 # 지역명 → (areaCd, sigunguCd 목록) 빠른 조회용 인덱스

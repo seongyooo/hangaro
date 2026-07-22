@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import MainPage from './pages/MainPage'
 import SearchingPage from './pages/SearchingPage'
 import ResultPage from './pages/ResultPage'
+import { api } from './lib/api'
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 export const LIGHT = {
@@ -94,13 +95,51 @@ export const LOADING_STAGES = [
 ]
 
 
+// ── 좌표 → 지역 자동 감지 ─────────────────────────────────────────────────────
+function detectRegion(lat, lng) {
+  if (lat >= 33.2 && lat <= 33.6 && lng >= 126.1 && lng <= 126.9) return '제주'
+  if (lat >= 35.0 && lat <= 35.3 && lng >= 128.9 && lng <= 129.4) return '부산'
+  if (lat >= 35.7 && lat <= 36.1 && lng >= 129.0 && lng <= 129.5) return '경주'
+  return '서울'
+}
+
+// ── API response → ResultPage waypoint format ─────────────────────────────────
+const CONGESTION_LABEL_TO_LEVEL = {
+  '한적': 'quiet',
+  '여유': 'relaxed',
+  '보통': 'moderate',
+  '혼잡': 'crowded',
+}
+
+const CONNECTOR_TIME = { walk: '12 min', transit: '10 min', car: '7 min' }
+
+function spotsToWaypoints(spots, transport) {
+  return spots.map((spot, i) => ({
+    id: spot.id,
+    name: spot.name,
+    level: CONGESTION_LABEL_TO_LEVEL[spot.congestion_label] || 'moderate',
+    stay: `${spot.visit_duration} min`,
+    connectorType: i < spots.length - 1 ? transport : null,
+    connectorTime: i < spots.length - 1 ? CONNECTOR_TIME[transport] : null,
+    order: i + 1,
+  }))
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [dark, setDark] = useState(false)
   const [screen, setScreen] = useState(1) // 1 | 2 | 3
   const [transport, setTransport] = useState('walk')
+  // 위치 상태
+  const [userLocation, setUserLocation] = useState(null)      // { lat, lng } — GPS
+  const [mapCenter, setMapCenter] = useState(null)            // { lat, lng } — 현재 지도 중심 (검색 기준)
+  const [origin, setOrigin] = useState(null)                  // { lat, lng, name } | null = My Location
+  const [destinationLatLng, setDestinationLatLng] = useState(null) // { lat, lng }
   const [destination, setDestination] = useState('')
   const [waypoints, setWaypoints] = useState([])
+  // API 결과
+  const [resultSpots, setResultSpots] = useState([])          // 실제 관광지 (lat/lng 포함)
+  const [apiStats, setApiStats] = useState(null)              // { congestion_avg, reduction_pct }
   const [tipNodeId, setTipNodeId] = useState(null)
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [loadingStage, setLoadingStage] = useState(0)
@@ -139,25 +178,62 @@ export default function App() {
     setWaypoints((prev) => prev.map((w) => (w.id === id ? { ...w, ...data } : w)))
   }, [])
 
-  const startSearch = useCallback(() => {
+  const startSearch = useCallback(async () => {
     clearInterval(loadTimerRef.current)
     setScreen(2)
     setLoadingProgress(0)
     setLoadingStage(0)
+
     const t0 = Date.now()
-    const duration = 2200
     loadTimerRef.current = setInterval(() => {
       const elapsed = Date.now() - t0
-      const pct = Math.min(100, Math.round((elapsed / duration) * 100))
-      const stage = pct < 34 ? 0 : pct < 67 ? 1 : 2
+      const pct = Math.min(90, Math.round((elapsed / 2500) * 90))
       setLoadingProgress(pct)
-      setLoadingStage(stage)
-      if (pct >= 100) {
-        clearInterval(loadTimerRef.current)
-        setTimeout(() => setScreen(3), 350)
-      }
+      setLoadingStage(pct < 34 ? 0 : pct < 67 ? 1 : 2)
     }, 90)
-  }, [])
+
+    // 출발지 좌표 결정: 선택된 origin > GPS > 서울 기본값
+    const srcLoc = origin || userLocation || { lat: 37.5665, lng: 126.9780 }
+    // 지역은 목적지(있으면) 또는 출발지 좌표 기반 자동 감지
+    const refLoc = destinationLatLng || srcLoc
+    const region = detectRegion(refLoc.lat, refLoc.lng)
+
+    const now = new Date()
+    const date = now.toISOString().slice(0, 10)
+    const start_time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+
+    try {
+      const response = await api.recommend({
+        region,
+        date,
+        start_time,
+        style: 'culture',
+        transport,
+        n_stops: 5,
+      })
+
+      clearInterval(loadTimerRef.current)
+      setLoadingProgress(100)
+      setLoadingStage(2)
+
+      const { spots, total_congestion_avg, congestion_reduction_pct } = response.data
+      setResultSpots(spots)
+      setApiStats({ congestion_avg: total_congestion_avg, reduction_pct: congestion_reduction_pct })
+
+      const newWaypoints = spotsToWaypoints(spots, transport)
+      if (newWaypoints.length > 0) setResultWaypoints(newWaypoints)
+    } catch (err) {
+      console.warn('[HanGaRo] 백엔드 연결 실패, 데모 데이터 사용:', err.message)
+      clearInterval(loadTimerRef.current)
+      setLoadingProgress(100)
+      setLoadingStage(2)
+      setResultSpots([])
+      setApiStats(null)
+      setResultWaypoints(RESULT_WAYPOINTS_BASE.map((w, i) => ({ ...w, order: i + 1 })))
+    }
+
+    setTimeout(() => setScreen(3), 350)
+  }, [transport, origin, userLocation, destinationLatLng])
 
   const cancelSearch = useCallback(() => {
     clearInterval(loadTimerRef.current)
@@ -227,8 +303,18 @@ export default function App() {
           {...sharedProps}
           transport={transport}
           setTransport={setTransport}
+          userLocation={userLocation}
+          onLocationFound={(lat, lng) => {
+            setUserLocation({ lat, lng })
+            setMapCenter((prev) => prev ?? { lat, lng }) // 최초 1회만 초기화
+          }}
+          onCenterChange={(lat, lng) => setMapCenter({ lat, lng })}
+          searchCenter={mapCenter}
+          origin={origin}
+          setOrigin={setOrigin}
           destination={destination}
           setDestination={setDestination}
+          setDestinationLatLng={setDestinationLatLng}
           waypoints={waypoints}
           addWaypoint={addWaypoint}
           removeWaypoint={removeWaypoint}
@@ -256,6 +342,9 @@ export default function App() {
           switchBufferRoute={switchBufferRoute}
           keepOriginal={keepOriginal}
           resultWaypoints={resultWaypoints}
+          resultSpots={resultSpots}
+          originNode={origin || userLocation}
+          apiStats={apiStats}
           dragWpId={dragWpId}
           onWpPointerDown={onWpPointerDown}
         />

@@ -15,7 +15,7 @@ from app.core.database import redis_client
 
 logger = logging.getLogger(__name__)
 
-_PATTERN_FILE = Path(__file__).parent.parent.parent.parent.parent / "data" / "congestion_patterns.json"
+_PATTERN_FILE = Path(__file__).parent.parent.parent.parent / "data" / "congestion_patterns.json"
 _PATTERNS: dict = json.loads(_PATTERN_FILE.read_text(encoding="utf-8")) if _PATTERN_FILE.exists() else {}
 
 LABEL_MAP = [

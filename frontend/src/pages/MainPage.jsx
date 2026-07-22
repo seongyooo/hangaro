@@ -24,8 +24,15 @@ export default function MainPage({
   toggleDark,
   transport,
   setTransport,
+  userLocation,
+  onLocationFound,
+  onCenterChange,
+  searchCenter,
+  origin,
+  setOrigin,
   destination,
   setDestination,
+  setDestinationLatLng,
   waypoints,
   addWaypoint,
   removeWaypoint,
@@ -42,7 +49,7 @@ export default function MainPage({
   const panelRef = useRef(null)
 
   // Map interaction state (local to MainPage)
-  const [destinationLatLng, setDestinationLatLng] = useState(null)
+  const [destPin, setDestPin] = useState(null)   // { lat, lng, name } — 지도에 목적지 핀 표시용
   const [centerOn, setCenterOn] = useState(null)
 
   useEffect(() => {
@@ -89,13 +96,24 @@ export default function MainPage({
   const handleDestinationSelect = useCallback((place) => {
     setDestination(place.name)
     setDestinationLatLng({ lat: place.lat, lng: place.lng })
+    setDestPin({ lat: place.lat, lng: place.lng, name: place.name })
     setCenterOn({ lat: place.lat, lng: place.lng })
-  }, [setDestination])
+  }, [setDestination, setDestinationLatLng])
 
   const handleDestinationClear = useCallback(() => {
     setDestination('')
     setDestinationLatLng(null)
-  }, [setDestination])
+    setDestPin(null)
+  }, [setDestination, setDestinationLatLng])
+
+  const handleOriginSelect = useCallback((place) => {
+    setOrigin({ lat: place.lat, lng: place.lng, name: place.name })
+    setCenterOn({ lat: place.lat, lng: place.lng })
+  }, [setOrigin])
+
+  const handleOriginClear = useCallback(() => {
+    setOrigin(null)
+  }, [setOrigin])
 
   const handleWaypointSelect = useCallback((id, place) => {
     updateWaypoint(id, { name: place.name, lat: place.lat, lng: place.lng })
@@ -115,16 +133,29 @@ export default function MainPage({
     onClick: () => setTipNodeId(tipNodeId === n.id ? null : n.id),
   }))
 
-  const destNode = destinationLatLng
+  const destNode = destPin
     ? [{
         id: '__dest__',
-        lat: destinationLatLng.lat,
-        lng: destinationLatLng.lng,
+        lat: destPin.lat,
+        lng: destPin.lng,
         name: destination,
         pulse: false,
         color: '#ef4444',
         showTip: true,
         levelLabel: 'Destination',
+      }]
+    : []
+
+  const originNode = origin
+    ? [{
+        id: '__origin__',
+        lat: origin.lat,
+        lng: origin.lng,
+        name: origin.name,
+        pulse: false,
+        color: '#8b5cf6',
+        showTip: true,
+        levelLabel: 'Starting Point',
       }]
     : []
 
@@ -141,7 +172,7 @@ export default function MainPage({
       order: i + 1,
     }))
 
-  const allNodes = [...idleNodes, ...destNode, ...wpNodes]
+  const allNodes = [...idleNodes, ...originNode, ...destNode, ...wpNodes]
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -187,6 +218,8 @@ export default function MainPage({
           nodes={allNodes}
           showLocation
           centerOn={centerOn}
+          onLocationFound={onLocationFound}
+          onCenterChange={onCenterChange}
           style={{ flex: 1, height: '100%' }}
         />
 
@@ -209,6 +242,11 @@ export default function MainPage({
               theme={theme}
               transport={transport}
               setTransport={setTransport}
+              searchCenter={searchCenter}
+              userLocation={userLocation}
+              origin={origin}
+              onOriginSelect={handleOriginSelect}
+              onOriginClear={handleOriginClear}
               destination={destination}
               onDestinationSelect={handleDestinationSelect}
               onDestinationClear={handleDestinationClear}
@@ -253,6 +291,11 @@ export default function MainPage({
               theme={theme}
               transport={transport}
               setTransport={setTransport}
+              searchCenter={searchCenter}
+              userLocation={userLocation}
+              origin={origin}
+              onOriginSelect={handleOriginSelect}
+              onOriginClear={handleOriginClear}
               destination={destination}
               onDestinationSelect={handleDestinationSelect}
               onDestinationClear={handleDestinationClear}
@@ -271,11 +314,74 @@ export default function MainPage({
   )
 }
 
+// ── Origin Row ────────────────────────────────────────────────────────────────
+function OriginRow({ theme, userLocation, searchCenter, origin, onOriginSelect, onOriginClear }) {
+  const [editing, setEditing] = useState(false)
+
+  if (editing) {
+    return (
+      <PlaceSearchInput
+        theme={theme}
+        placeholder="Search starting point..."
+        value={origin?.name || ''}
+        onSelect={(place) => { onOriginSelect(place); setEditing(false) }}
+        onClear={() => { onOriginClear(); setEditing(false) }}
+        userLocation={searchCenter}
+        leadingSlot={
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#8b5cf6', flexShrink: 0 }} />
+        }
+      />
+    )
+  }
+
+  const label = origin?.name || (userLocation ? 'My Location' : 'Getting location...')
+  const isMyLoc = !origin
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        background: theme.surface,
+        border: `1px solid ${theme.border}`,
+        borderRadius: 12,
+        padding: '11px 14px',
+      }}
+    >
+      <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#8b5cf6', flexShrink: 0 }} />
+      <span style={{ flex: 1, fontSize: 14, color: isMyLoc ? theme.subtext : theme.text, fontStyle: isMyLoc ? 'italic' : 'normal' }}>
+        {label}
+      </span>
+      <button
+        onClick={() => setEditing(true)}
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: theme.primary,
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          padding: '2px 4px',
+          flexShrink: 0,
+        }}
+      >
+        Change
+      </button>
+    </div>
+  )
+}
+
 // ── Panel Content ─────────────────────────────────────────────────────────────
 function PanelContent({
   theme,
   transport,
   setTransport,
+  searchCenter,
+  userLocation,
+  origin,
+  onOriginSelect,
+  onOriginClear,
   destination,
   onDestinationSelect,
   onDestinationClear,
@@ -298,6 +404,16 @@ function PanelContent({
         overflowY: 'auto',
       }}
     >
+      {/* Origin */}
+      <OriginRow
+        theme={theme}
+        userLocation={userLocation}
+        searchCenter={searchCenter}
+        origin={origin}
+        onOriginSelect={onOriginSelect}
+        onOriginClear={onOriginClear}
+      />
+
       {/* Transport tabs */}
       <div
         style={{
@@ -347,6 +463,7 @@ function PanelContent({
         value={destination}
         onSelect={onDestinationSelect}
         onClear={onDestinationClear}
+        userLocation={searchCenter}
         leadingSlot={<MapPinIcon size={15} color={theme.subtext} />}
       />
 
@@ -387,6 +504,7 @@ function PanelContent({
             value=""
             onSelect={(place) => onWaypointSelect(wp.id, place)}
             onClear={() => removeWaypoint(wp.id)}
+            userLocation={searchCenter}
             leadingSlot={
               <div
                 style={{
@@ -446,7 +564,7 @@ function PanelContent({
 }
 
 // ── Place Search Input ────────────────────────────────────────────────────────
-function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadingSlot }) {
+function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadingSlot, userLocation }) {
   const [query, setQuery] = useState(value || '')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
@@ -490,6 +608,15 @@ function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadin
     if (!services?.Places) { setResults([]); return }
     const ps = new services.Places()
     setSearching(true)
+
+    const options = userLocation
+      ? {
+          location: new window.kakao.maps.LatLng(userLocation.lat, userLocation.lng),
+          radius: 20000,                    // 20 km 이내 우선
+          sort: services.SortBy.DISTANCE,   // 거리순 정렬
+        }
+      : {}
+
     ps.keywordSearch(q, (data, status) => {
       setSearching(false)
       if (status === services.Status.OK && data.length > 0) {
@@ -500,8 +627,8 @@ function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadin
         setResults([])
         setOpen(false)
       }
-    })
-  }, [calcPos])
+    }, options)
+  }, [calcPos, userLocation])
 
   const handleChange = (e) => {
     const v = e.target.value
