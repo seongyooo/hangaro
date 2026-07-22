@@ -99,6 +99,14 @@ export default function MainPage({
     window.addEventListener('pointerup', onUp)
   }, [sheetH, getSnapPx])
 
+  const handlePinClick = useCallback((pin) => {
+    setSelectedSpot((prev) => (prev?.id === pin.id ? null : pin))
+    setTipNodeId((prev) => (prev === pin.id ? null : pin.id))
+    if (!isDesktop) {
+      setSheetH(Math.round(window.innerHeight * 0.5))
+    }
+  }, [isDesktop])
+
   const handleDestinationSelect = useCallback((place) => {
     setDestination(place.name)
     setDestinationLatLng({ lat: place.lat, lng: place.lng })
@@ -136,14 +144,7 @@ export default function MainPage({
     levelLabel: LEVEL_LABEL[n.level],
     pulseDur: n.level === 'crowded' ? '0.9s' : n.level === 'moderate' ? '1.3s' : '2.1s',
     showTip: tipNodeId === n.id,
-    onClick: () => {
-      setTipNodeId(tipNodeId === n.id ? null : n.id)
-      setSelectedSpot((prev) => (prev?.id === n.id ? null : n))
-      // 모바일: 바텀시트 절반 높이로 열기
-      if (!isDesktop && window.innerHeight) {
-        setSheetH(Math.round(window.innerHeight * 0.5))
-      }
-    },
+    onClick: () => handlePinClick(n),
   }))
 
   // attractionPins: IDLE_NODES 기반 고정 데이터 — useMemo로 안정화
@@ -263,6 +264,7 @@ export default function MainPage({
           nodes={allNodes}
           congestionBars={idleNodes}
           attractionPins={attractionPins}
+          onPinClick={handlePinClick}
           showLocation
           centerOn={centerOn}
           onLocationFound={onLocationFound}

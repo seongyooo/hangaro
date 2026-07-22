@@ -11,7 +11,7 @@
  *
  * 토큰 설정: frontend/.env → VITE_MAPBOX_TOKEN=pk.ey...
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { LEVEL_COLOR, LEVEL_LABEL } from '../../App'
@@ -55,7 +55,7 @@ function buildMarkerEl(node) {
 // ── Callout 카드 마커 빌더 ───────────────────────────────────────────────────
 // 구조: 3D CSS perspective 카드 → 수직 stem → 좌표 dot
 // hover transform 없음 — Mapbox 마커 위치 계산과 충돌 방지
-function buildCalloutEl(pin, color) {
+function buildCalloutEl(pin, color, onClickCallback) {
   // ── 최상위 래퍼: pointer-events none, 레이아웃만 담당 ──────────────────
   const wrap = document.createElement('div')
   wrap.style.cssText = [
@@ -80,9 +80,12 @@ function buildCalloutEl(pin, color) {
     'animation:calloutFadeIn 0.45s cubic-bezier(0.34,1.4,0.64,1) both;',
   ].join('')
 
-  // 클릭 이벤트가 지도로 전파되지 않도록 차단
+  // 클릭 이벤트가 지도로 전파되지 않도록 차단 + 외부 콜백 호출
   card.addEventListener('mousedown', (e) => e.stopPropagation())
-  card.addEventListener('click',     (e) => e.stopPropagation())
+  card.addEventListener('click', (e) => {
+    e.stopPropagation()
+    onClickCallback?.()
+  })
 
   // ── 사진 영역 ────────────────────────────────────────────────────────────
   const photoWrap = document.createElement('div')
@@ -164,6 +167,7 @@ export default function MapboxView({
   nodes        = [],
   congestionBars = [],
   attractionPins = [],   // 관광지 callout 카드 핀 [{id,name,lat,lng,image,level},...]
+  onPinClick   = null,   // (pin) => void — callout 카드 클릭 콜백 (ref로 안정화)
   showLocation = false,
   routeNodes   = null,
   routePath    = null,
@@ -176,12 +180,16 @@ export default function MapboxView({
   style,
   children,
 }) {
-  const containerRef  = useRef(null)
-  const mapRef        = useRef(null)
-  const markersRef    = useRef([])
-  const calloutRef    = useRef([])   // callout 카드 마커 목록
-  const locMarkerRef  = useRef(null)
+  const containerRef   = useRef(null)
+  const mapRef         = useRef(null)
+  const markersRef     = useRef([])
+  const calloutRef     = useRef([])   // callout 카드 마커 목록
+  const locMarkerRef   = useRef(null)
+  const onPinClickRef  = useRef(onPinClick)
   const [ready, setReady] = useState(false)
+
+  // onPinClick 최신값을 ref에 동기화 — 마커 재생성 없이 항상 최신 핸들러 호출
+  useEffect(() => { onPinClickRef.current = onPinClick }, [onPinClick])
 
   // ── 지도 초기화 ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -203,11 +211,6 @@ export default function MapboxView({
       maxBounds: [[124.5, 33.0], [132.0, 38.9]],
     })
 
-    // 피치·방향 조작 컨트롤 (우상단) — 나침반, 줌, 피치 슬라이더
-    map.addControl(
-      new mapboxgl.NavigationControl({ visualizePitch: true }),
-      'top-right',
-    )
 
     map.on('load', () => {
       // 텍스트 레이어 직전에 fill-extrusion 삽입 → 도로명 텍스트가 가려지지 않음
@@ -361,13 +364,14 @@ export default function MapboxView({
       .filter((p) => p.lat != null && p.lng != null)
       .forEach((pin) => {
         const color = LEVEL_COLOR[pin.level] || '#10b981'
-        const el = buildCalloutEl(pin, color)
+        const el = buildCalloutEl(pin, color, () => {
+          pin.onClick?.()
+          onPinClickRef.current?.(pin)
+        })
 
         el.style.display = visible ? 'flex' : 'none'
 
-        if (pin.onClick) el.addEventListener('click', (e) => { e.stopPropagation(); pin.onClick() })
-
-        const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom', offset: [0, -60] })
           .setLngLat([pin.lng, pin.lat])
           .addTo(map)
         calloutRef.current.push(marker)
