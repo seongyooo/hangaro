@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
-import KakaoMapView from '../components/map/KakaoMapView'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import SmartMapView from '../components/map/SmartMapView'
 import CongestionBadge from '../components/ui/CongestionBadge'
+import { fetchRouteGeometry } from '../lib/routing'
 import {
   ChevronLeftIcon, ChevronRightIcon,
   SaveIcon, ShareIcon, AlertIcon,
@@ -39,6 +40,7 @@ export default function ResultPage({
   resultSpots = [],       // API 실제 관광지 (lat/lng/congestion_label 포함)
   originNode = null,      // { lat, lng } 출발지
   apiStats = null,        // { congestion_avg, reduction_pct }
+  transport = 'walk',     // 이동수단 (실도로 경로 프로파일 결정)
   dragWpId,
   onWpPointerDown,
 }) {
@@ -79,7 +81,9 @@ export default function ResultPage({
 
   // 실제 API 결과가 있으면 사용, 없으면 IDLE_NODES 데모 폴백
   const hasRealSpots = resultSpots.length > 0
-  const nodesResult = hasRealSpots
+
+  // planColor는 노드 색상에만 영향 — 좌표와 무관하므로 별도로 memoize
+  const nodesResult = useMemo(() => hasRealSpots
     ? resultSpots.map((spot, i) => ({
         id: spot.id,
         name: spot.name,
@@ -97,12 +101,50 @@ export default function ResultPage({
         color: planColor,
         pulse: false,
         showTip: false,
-      }))
+      })),
+  // planColor 변경(플랜 탭 전환)은 경로 재계산과 무관 — 의도적으로 제외
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [hasRealSpots, resultSpots])
 
   // 폴리라인: 출발지 + 관광지 순서
-  const routeNodes = hasRealSpots
-    ? [...(originNode ? [{ ...originNode, id: '__origin__' }] : []), ...nodesResult]
-    : IDLE_NODES.slice(0, 4)
+  // __origin__이 이미 resultSpots에 포함된 경우(사용자 선택 경로) 중복 추가하지 않음
+  const originAlreadyInSpots = hasRealSpots && resultSpots[0]?.id === '__origin__'
+  const routeNodes = useMemo(() => hasRealSpots
+    ? (originAlreadyInSpots
+        ? nodesResult
+        : [...(originNode ? [{ ...originNode, id: '__origin__' }] : []), ...nodesResult])
+    : IDLE_NODES.slice(0, 4),
+  [hasRealSpots, originAlreadyInSpots, originNode, nodesResult])
+
+  // ── 실도로 경로 fetch (OSRM) ────────────────────────────────────────────────
+  const [routePath, setRoutePath] = useState(null)
+
+  // 좌표 기반 안정 키 — 위치가 실제로 바뀔 때만 재요청
+  // (플랜 탭 전환 등 색상만 바뀌는 경우에는 재요청 안 함)
+  const routeCoordKey = useMemo(() =>
+    routeNodes
+      .filter((n) => n.lat != null && n.lng != null)
+      .map((n) => `${n.lat.toFixed(5)},${n.lng.toFixed(5)}`)
+      .join('|'),
+  [routeNodes])
+
+  useEffect(() => {
+    if (!hasRealSpots || !routeCoordKey) { setRoutePath(null); return }
+    let cancelled = false
+    // setRoutePath(null) 호출 없음 — 이전 경로를 유지하다가 새 경로 도착 시 교체
+    // → 깜빡임 방지
+
+    fetchRouteGeometry(routeNodes, transport).then((path) => {
+      if (!cancelled && path) setRoutePath(path)
+    })
+
+    return () => { cancelled = true }
+  // routeCoordKey: 위치 변경 시만 발동 / transport: 이동수단 변경 시 재요청
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeCoordKey, transport])
+
+  // 대중교통은 점선 스타일로 표시 (실제 노선이 아닌 도로 근사치임을 구분)
+  const routeStrokeStyle = transport === 'transit' ? 'longdash' : 'solid'
 
   const congestionVal = bufferApplied
     ? '−73%'
@@ -120,11 +162,14 @@ export default function ResultPage({
 
   const MapArea = ({ style }) => (
     <div style={{ position: 'relative', overflow: 'hidden', ...style }}>
-      <KakaoMapView
+      <SmartMapView
         theme={theme}
+        dark={dark}
         nodes={nodesResult}
         showLocation={false}
         routeNodes={routeNodes}
+        routePath={routePath}
+        routeStrokeStyle={routeStrokeStyle}
         planColor={planColor}
         fitBoundsToNodes={hasRealSpots}
         style={{ width: '100%', height: '100%' }}
@@ -296,9 +341,11 @@ export default function ResultPage({
               }}>
                 {rw.name}
               </div>
-              <div style={{ fontSize: 11, color: theme.subtext, marginTop: 2 }}>
-                Stay ~{rw.stay}
-              </div>
+              {rw.stay && (
+                <div style={{ fontSize: 11, color: theme.subtext, marginTop: 2 }}>
+                  Stay ~{rw.stay}
+                </div>
+              )}
             </div>
 
             <CongestionBadge level={rw.level} />
@@ -390,9 +437,9 @@ export default function ResultPage({
         </header>
 
         {/* Desktop body: map + sidebar */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
           {/* Map */}
-          <MapArea style={{ flex: 1, height: '100%' }} />
+          <MapArea style={{ flex: 1, minWidth: 0 }} />
 
           {/* Sidebar */}
           {sidebarOpen && (

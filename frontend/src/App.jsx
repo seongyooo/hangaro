@@ -33,24 +33,24 @@ export const DARK = {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 export const LEVEL_COLOR = {
-  quiet: '#16a34a',
-  relaxed: '#ca8a04',
-  moderate: '#ea580c',
-  crowded: '#dc2626',
+  quiet:    '#10b981',  // 에메랄드 — 한적
+  relaxed:  '#f59e0b',  // 앰버     — 여유
+  moderate: '#f97316',  // 오렌지   — 보통
+  crowded:  '#ef4444',  // 레드     — 혼잡
 }
 
 export const LEVEL_BADGE_BG = {
-  quiet: '#dcfce7',
-  relaxed: '#fef9c3',
+  quiet:    '#d1fae5',
+  relaxed:  '#fef3c7',
   moderate: '#ffedd5',
-  crowded: '#fee2e2',
+  crowded:  '#fee2e2',
 }
 
 export const LEVEL_LABEL = {
-  quiet: 'Quiet',
-  relaxed: 'Relaxed',
-  moderate: 'Moderate',
-  crowded: 'Crowded',
+  quiet:    '한적',
+  relaxed:  '여유',
+  moderate: '보통',
+  crowded:  '혼잡',
 }
 
 export const IDLE_NODES = [
@@ -83,9 +83,9 @@ export const RESULT_WAYPOINTS_BASE = [
 ]
 
 export const PLAN_META = {
-  A: { title: 'Plan A', metric: 'Min Crowd', color: '#22c55e', bgActive: '#22c55e' },
-  B: { title: 'Plan B', metric: 'Shortest', color: '#3b82f6', bgActive: '#3b82f6' },
-  C: { title: 'Plan C', metric: 'Hidden Gems', color: '#a855f7', bgActive: '#a855f7' },
+  A: { title: 'Plan A', metric: '혼잡 최소', color: '#10b981', bgActive: '#10b981' },
+  B: { title: 'Plan B', metric: '최단 경로', color: '#6366f1', bgActive: '#6366f1' },
+  C: { title: 'Plan C', metric: '숨은 명소', color: '#f59e0b', bgActive: '#f59e0b' },
 }
 
 export const LOADING_STAGES = [
@@ -194,6 +194,63 @@ export default function App() {
 
     // 출발지 좌표 결정: 선택된 origin > GPS > 서울 기본값
     const srcLoc = origin || userLocation || { lat: 37.5665, lng: 126.9780 }
+
+    // ── 사용자가 직접 목적지/경유지를 설정한 경우: API 없이 바로 경로 생성 ──
+    const wpPoints = waypoints
+      .filter((w) => w.lat != null && w.lng != null)
+      .map((w) => ({
+        id: w.id,
+        name: w.name,
+        lat: w.lat,
+        lng: w.lng,
+        congestion_label: '보통',
+        visit_duration: 45,
+      }))
+    const destPoint = destinationLatLng
+      ? [{
+          id: '__dest__',
+          name: destination || '목적지',
+          lat: destinationLatLng.lat,
+          lng: destinationLatLng.lng,
+          congestion_label: '보통',
+          visit_duration: 60,
+        }]
+      : []
+
+    const hasUserRoute = wpPoints.length > 0 || destPoint.length > 0
+
+    if (hasUserRoute) {
+      const originPoint = {
+        id: '__origin__',
+        name: origin?.name || 'My Location',
+        lat: srcLoc.lat,
+        lng: srcLoc.lng,
+        congestion_label: '보통',
+        visit_duration: null,
+      }
+      const allPoints = [originPoint, ...wpPoints, ...destPoint]
+
+      setResultSpots(allPoints)
+      setApiStats(null)
+      setResultWaypoints(
+        allPoints.map((p, i) => ({
+          id: p.id,
+          name: p.name,
+          level: 'moderate',
+          stay: p.visit_duration != null ? `${p.visit_duration} min` : null,
+          connectorType: i < allPoints.length - 1 ? transport : null,
+          connectorTime: i < allPoints.length - 1 ? CONNECTOR_TIME[transport] : null,
+          order: i + 1,
+        }))
+      )
+      clearInterval(loadTimerRef.current)
+      setLoadingProgress(100)
+      setLoadingStage(2)
+      setTimeout(() => setScreen(3), 350)
+      return
+    }
+
+    // ── 사용자 선택 없음: API 추천 사용 ──────────────────────────────────────
     // 지역은 목적지(있으면) 또는 출발지 좌표 기반 자동 감지
     const refLoc = destinationLatLng || srcLoc
     const region = detectRegion(refLoc.lat, refLoc.lng)
@@ -233,7 +290,7 @@ export default function App() {
     }
 
     setTimeout(() => setScreen(3), 350)
-  }, [transport, origin, userLocation, destinationLatLng])
+  }, [transport, origin, userLocation, destinationLatLng, waypoints, destination])
 
   const cancelSearch = useCallback(() => {
     clearInterval(loadTimerRef.current)
@@ -273,6 +330,21 @@ export default function App() {
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+  }, [])
+
+  // Kakao SDK 초기화 (autoload=false → 수동 load() 필요)
+  // 장소 검색(PlaceSearchInput)은 MapboxView 사용 시에도 Kakao Services 모듈을 사용하므로
+  // KakaoMapView가 렌더링되지 않아도 여기서 한 번만 초기화
+  useEffect(() => {
+    const initKakao = () => {
+      if (window.kakao?.maps && !window.kakao.maps.Map) {
+        window.kakao.maps.load(() => {}) // services 모듈 활성화
+      }
+    }
+    initKakao()
+    // 스크립트 로드가 늦는 경우 대비
+    const t = setTimeout(initKakao, 1500)
+    return () => clearTimeout(t)
   }, [])
 
   // Clean up on unmount
@@ -345,6 +417,7 @@ export default function App() {
           resultSpots={resultSpots}
           originNode={origin || userLocation}
           apiStats={apiStats}
+          transport={transport}
           dragWpId={dragWpId}
           onWpPointerDown={onWpPointerDown}
         />

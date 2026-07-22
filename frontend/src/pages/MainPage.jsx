@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import KakaoMapView from '../components/map/KakaoMapView'
+import { createPortal } from 'react-dom'
+import SmartMapView from '../components/map/SmartMapView'
 import {
   WalkIcon, TransitIcon, CarIcon, MapPinIcon,
   PlusIcon, XIcon, SunIcon, MoonIcon,
@@ -212,15 +213,17 @@ export default function MainPage({
       </header>
 
       {/* ── Map + Panel ── */}
-      <div style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden' }}>
-        <KakaoMapView
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <SmartMapView
           theme={theme}
+          dark={dark}
           nodes={allNodes}
+          congestionBars={idleNodes}
           showLocation
           centerOn={centerOn}
           onLocationFound={onLocationFound}
           onCenterChange={onCenterChange}
-          style={{ flex: 1, height: '100%' }}
+          style={{ flex: 1, minWidth: 0 }}
         />
 
         {/* Desktop sidebar */}
@@ -604,31 +607,51 @@ function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadin
   }, [open, calcPos])
 
   const doSearch = useCallback((q) => {
-    const services = window.kakao?.maps?.services
-    if (!services?.Places) { setResults([]); return }
-    const ps = new services.Places()
-    setSearching(true)
+    const kakao = window.kakao
+    if (!kakao?.maps) {
+      console.warn('[Search] window.kakao.maps 없음 — Kakao 스크립트 로드 확인 필요')
+      setResults([])
+      return
+    }
 
-    const options = userLocation
-      ? {
-          location: new window.kakao.maps.LatLng(userLocation.lat, userLocation.lng),
-          radius: 20000,                    // 20 km 이내 우선
-          sort: services.SortBy.DISTANCE,   // 거리순 정렬
-        }
-      : {}
-
-    ps.keywordSearch(q, (data, status) => {
-      setSearching(false)
-      if (status === services.Status.OK && data.length > 0) {
-        setResults(data.slice(0, 5))
-        calcPos()
-        setOpen(true)
-      } else {
+    // 실제 검색 실행 (services가 준비된 후 호출)
+    const runWithServices = (services) => {
+      if (!services?.Places) {
+        console.warn('[Search] kakao.maps.services.Places 없음 — load() 후에도 미초기화')
         setResults([])
-        setOpen(false)
+        return
       }
-    }, options)
-  }, [calcPos, userLocation])
+      const ps = new services.Places()
+      setSearching(true)
+
+      // 정확도 기준 전국 검색
+      // - radius + DISTANCE 조합은 주변 식당·가게가 실제 명소보다 상위에 오는 문제 있음
+      // - ACCURACY(기본값) 사용 시 "서울역" → 서울역 역사가 1위로 정확히 노출됨
+      ps.keywordSearch(q, (data, status) => {
+        setSearching(false)
+        if (status === services.Status.OK && data.length > 0) {
+          setResults(data.slice(0, 5))
+          calcPos()
+          setOpen(true)
+        } else {
+          setResults([])
+          setOpen(false)
+        }
+      })
+    }
+
+    const services = kakao.maps.services
+    if (services?.Places) {
+      runWithServices(services)
+    } else {
+      // autoload=false 모드: SDK 초기화 후 재실행
+      console.log('[Search] kakao.maps.load() 호출 중...')
+      kakao.maps.load(() => {
+        console.log('[Search] kakao.maps.load() 완료')
+        runWithServices(kakao.maps.services)
+      })
+    }
+  }, [calcPos])
 
   const handleChange = (e) => {
     const v = e.target.value
@@ -718,7 +741,7 @@ function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadin
         )}
       </div>
 
-      {showDropdown && (
+      {showDropdown && createPortal(
         <div
           ref={dropRef}
           style={{
@@ -764,7 +787,8 @@ function PlaceSearchInput({ theme, placeholder, value, onSelect, onClear, leadin
               )}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

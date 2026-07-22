@@ -53,6 +53,29 @@ body {
   animation: pulseRing ease-out infinite;
 }
 
+/* 두 번째 펄스 링 — 0.6s 딜레이로 겹쳐서 물결 효과 */
+.pulse-ring-delay {
+  animation: pulseRing ease-out infinite;
+  animation-delay: 0.6s;
+}
+
+/* 혼잡도 막대 성장 애니메이션 */
+@keyframes barGrow {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.bar-grow {
+  animation: barGrow 0.55s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  transform-origin: bottom center;
+}
+
 .ripple-wave {
   animation: rippleWave 2s ease-out infinite;
 }
