@@ -1,13 +1,9 @@
-import KakaoMapView from '../components/map/KakaoMapView'
-import MapCanvas from '../components/map/MapCanvas'
+import SmartMapView from '../components/map/SmartMapView'
 import {
   IDLE_NODES,
-  MAP_BLOCKS,
   LEVEL_COLOR,
   LOADING_STAGES,
 } from '../App'
-
-const HAS_KEY = !!import.meta.env.VITE_KAKAO_MAP_KEY
 
 export default function SearchingPage({
   theme,
@@ -26,7 +22,7 @@ export default function SearchingPage({
     showTip: false,
   }))
 
-  // searchEdges: 플레이스홀더 MapCanvas 전용 (Dijkstra 시각화)
+  // searchEdges: Mapbox/Kakao 키가 둘 다 없을 때의 최하위 MapCanvas 폴백에서만 사용됨(Dijkstra 시각화)
   const searchEdges = IDLE_NODES.slice(0, -1).map((n, i) => {
     const next = IDLE_NODES[i + 1]
     return {
@@ -39,25 +35,18 @@ export default function SearchingPage({
 
   const stageText = LOADING_STAGES[loadingStage] || LOADING_STAGES[0]
 
-  const MapView = HAS_KEY
-    ? (
-      <KakaoMapView
-        theme={theme}
-        nodes={nodesSearch}
-        showLocation={false}
-        style={{ flex: 1 }}
-      />
-    )
-    : (
-      <MapCanvas
-        theme={theme}
-        nodes={nodesSearch}
-        mapBlocks={MAP_BLOCKS}
-        showLocation={false}
-        searchEdges={searchEdges}
-        style={{ flex: 1 }}
-      />
-    )
+  // MainPage/ResultPage와 동일하게 SmartMapView 사용 — 화면 전환마다 3D↔2D로
+  // 지도 종류가 바뀌는 것을 방지 (Mapbox 토큰 있으면 항상 3D 유지)
+  const MapView = (
+    <SmartMapView
+      theme={theme}
+      nodes={nodesSearch}
+      congestionBars={nodesSearch}
+      showLocation={false}
+      searchEdges={searchEdges}
+      style={{ flex: 1 }}
+    />
+  )
 
   return (
     <div
@@ -83,7 +72,7 @@ export default function SearchingPage({
           cursor: 'pointer', border: 'none', zIndex: 30,
         }}
       >
-        Cancel
+        취소
       </button>
 
       {/* Loading panel */}

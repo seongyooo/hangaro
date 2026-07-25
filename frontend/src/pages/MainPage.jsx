@@ -139,14 +139,16 @@ export default function MainPage({
   const hasDestOrWp = !!destination || waypoints.some((w) => w.name)
 
   // Map nodes
-  const idleNodes = IDLE_NODES.map((n) => ({
+  // useMemo 없이 매 렌더마다 새 배열을 만들면(바텀시트 드래그 등 잦은 리렌더 시)
+  // MapboxView/KakaoMapView의 마커·3D 막대 effect가 매번 재실행되어 깜빡인다
+  const idleNodes = useMemo(() => IDLE_NODES.map((n) => ({
     ...n,
     color: LEVEL_COLOR[n.level],
     levelLabel: LEVEL_LABEL[n.level],
     pulseDur: n.level === 'crowded' ? '0.9s' : n.level === 'moderate' ? '1.3s' : '2.1s',
     showTip: tipNodeId === n.id,
     onClick: () => handlePinClick(n),
-  }))
+  })), [tipNodeId, handlePinClick])
 
   const attractionPins = useMemo(() =>
     IDLE_NODES.map((n) => ({
@@ -159,12 +161,14 @@ export default function MainPage({
     })),
   [])
 
-  const destNode = destPin
-    ? [{ id: '__dest__', lat: destPin.lat, lng: destPin.lng, name: destination,
-         pulse: false, color: '#ef4444', showTip: true, levelLabel: '목적지' }]
-    : []
+  const destNode = useMemo(() => (
+    destPin
+      ? [{ id: '__dest__', lat: destPin.lat, lng: destPin.lng, name: destination,
+           pulse: false, color: '#ef4444', showTip: true, levelLabel: '목적지' }]
+      : []
+  ), [destPin, destination])
 
-  const allNodes = [...idleNodes, ...destNode]
+  const allNodes = useMemo(() => [...idleNodes, ...destNode], [idleNodes, destNode])
 
   const mapPanel = (
     <SmartMapView

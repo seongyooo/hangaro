@@ -76,10 +76,10 @@ export const MAP_BLOCKS = [
 ]
 
 export const RESULT_WAYPOINTS_BASE = [
-  { id: 'cd', name: 'Changdeokgung', level: 'quiet', stay: '40 min', connectorType: 'walk', connectorTime: '15 min' },
-  { id: 'np', name: 'Naksan Park', level: 'quiet', stay: '25 min', connectorType: 'transit', connectorTime: '10 min' },
-  { id: 'im', name: 'Ihwa Mural Village', level: 'relaxed', stay: '35 min', connectorType: 'walk', connectorTime: '8 min' },
-  { id: 'bc', name: 'Bukchon Hanok Village', level: 'moderate', stay: '30 min', connectorType: null, connectorTime: null },
+  { id: 'cd', name: '창덕궁', level: 'quiet', stay: '40분', connectorType: 'walk', connectorTime: '15분' },
+  { id: 'np', name: '낙산공원', level: 'quiet', stay: '25분', connectorType: 'transit', connectorTime: '10분' },
+  { id: 'im', name: '이화마을', level: 'relaxed', stay: '35분', connectorType: 'walk', connectorTime: '8분' },
+  { id: 'bc', name: '북촌한옥마을', level: 'moderate', stay: '30분', connectorType: null, connectorTime: null },
 ]
 
 export const PLAN_META = {
@@ -89,9 +89,9 @@ export const PLAN_META = {
 }
 
 export const LOADING_STAGES = [
-  'Collecting tourist spot data...',
-  'Analyzing congestion levels...',
-  'Calculating optimal route...',
+  '관광지 데이터 수집 중...',
+  '혼잡도 분석 중...',
+  '최적 경로 계산 중...',
 ]
 
 
@@ -111,14 +111,14 @@ const CONGESTION_LABEL_TO_LEVEL = {
   '혼잡': 'crowded',
 }
 
-const CONNECTOR_TIME = { walk: '12 min', transit: '10 min', car: '7 min' }
+const CONNECTOR_TIME = { walk: '12분', transit: '10분', car: '7분' }
 
 function spotsToWaypoints(spots, transport) {
   return spots.map((spot, i) => ({
     id: spot.id,
     name: spot.name,
     level: CONGESTION_LABEL_TO_LEVEL[spot.congestion_label] || 'moderate',
-    stay: `${spot.visit_duration} min`,
+    stay: `${spot.visit_duration}분`,
     connectorType: i < spots.length - 1 ? transport : null,
     connectorTime: i < spots.length - 1 ? CONNECTOR_TIME[transport] : null,
     order: i + 1,
@@ -238,7 +238,7 @@ export default function App() {
           id: p.id,
           name: p.name,
           level: 'moderate',
-          stay: p.visit_duration != null ? `${p.visit_duration} min` : null,
+          stay: p.visit_duration != null ? `${p.visit_duration}분` : null,
           connectorType: i < allPoints.length - 1 ? transport : null,
           connectorTime: i < allPoints.length - 1 ? CONNECTOR_TIME[transport] : null,
           order: i + 1,

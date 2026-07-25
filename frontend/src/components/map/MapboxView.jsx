@@ -50,6 +50,81 @@ function buildMarkerEl(node) {
   return el
 }
 
+function styleUrl(isDark) {
+  return isDark ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/streets-v12'
+}
+
+/** 스타일(라이트/다크) 로드 직후마다 호출 — setStyle()은 커스텀 레이어를 모두 지우므로 재생성 필요 */
+function addCustomLayers(map, isDark, planColor, routeStrokeStyle) {
+  const firstLabelId = map.getStyle().layers.find(
+    (l) => l.type === 'symbol' && l.layout?.['text-field'],
+  )?.id
+
+  map.addLayer({
+    id: 'hgr-3d-buildings',
+    source: 'composite', 'source-layer': 'building',
+    filter: ['==', 'extrude', 'true'],
+    type: 'fill-extrusion',
+    minzoom: 14,
+    paint: {
+      'fill-extrusion-color': isDark ? '#1e2d3d' : '#c8d6e0',
+      'fill-extrusion-height': [
+        'interpolate', ['linear'], ['zoom'], 14, 0, 14.1, ['get', 'height'],
+      ],
+      'fill-extrusion-base': [
+        'interpolate', ['linear'], ['zoom'], 14, 0, 14.1, ['get', 'min_height'],
+      ],
+      'fill-extrusion-opacity': isDark ? 0.85 : 0.5,
+    },
+  }, firstLabelId)
+
+  map.addSource('hgr-bars', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+  map.addLayer({
+    id: 'hgr-bars',
+    type: 'fill-extrusion',
+    source: 'hgr-bars',
+    paint: {
+      'fill-extrusion-color':   ['get', 'color'],
+      'fill-extrusion-height':  ['get', 'height'],
+      'fill-extrusion-base':    0,
+      'fill-extrusion-opacity': 0.88,
+      'fill-extrusion-vertical-gradient': true,
+      'fill-extrusion-height-transition':  { duration: 900, delay: 80 },
+      'fill-extrusion-opacity-transition': { duration: 600, delay: 0 },
+    },
+  }, firstLabelId)
+
+  map.addSource('hgr-route-glow', {
+    type: 'geojson',
+    data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
+  })
+  map.addLayer({
+    id: 'hgr-route-glow',
+    type: 'line', source: 'hgr-route-glow',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': planColor, 'line-width': 16, 'line-opacity': 0.14, 'line-blur': 8 },
+  })
+
+  map.addSource('hgr-route', {
+    type: 'geojson',
+    data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
+  })
+  map.addLayer({
+    id: 'hgr-route',
+    type: 'line', source: 'hgr-route',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color':     planColor,
+      'line-width':     5,
+      'line-opacity':   0.92,
+      'line-dasharray': routeStrokeStyle === 'longdash' ? [4, 2] : [1],
+    },
+  })
+}
+
 // ── 컴포넌트 ──────────────────────────────────────────────────────────────────
 
 // ── Callout 카드 마커 빌더 ───────────────────────────────────────────────────
@@ -187,6 +262,9 @@ export default function MapboxView({
   const locMarkerRef   = useRef(null)
   const onPinClickRef  = useRef(onPinClick)
   const [ready, setReady] = useState(false)
+  // setStyle() 이후 hgr-bars/hgr-route 소스가 새로 생성되므로, 이 값이 바뀌면
+  // 아래 데이터 주입 effect들이 다시 실행되어 지도 데이터를 재주입한다
+  const [styleVersion, setStyleVersion] = useState(0)
 
   // onPinClick 최신값을 ref에 동기화 — 마커 재생성 없이 항상 최신 핸들러 호출
   useEffect(() => { onPinClickRef.current = onPinClick }, [onPinClick])
@@ -199,9 +277,7 @@ export default function MapboxView({
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: dark
-        ? 'mapbox://styles/mapbox/dark-v11'
-        : 'mapbox://styles/mapbox/streets-v12',
+      style: styleUrl(dark),
       center:    [SEOUL.lng, SEOUL.lat],
       zoom:      14,
       pitch:     50,
@@ -213,79 +289,7 @@ export default function MapboxView({
 
 
     map.on('load', () => {
-      // 텍스트 레이어 직전에 fill-extrusion 삽입 → 도로명 텍스트가 가려지지 않음
-      const firstLabelId = map.getStyle().layers.find(
-        (l) => l.type === 'symbol' && l.layout?.['text-field'],
-      )?.id
-
-      // ── 건물 3D 렌더링 ──────────────────────────────────────────────────
-      map.addLayer({
-        id: 'hgr-3d-buildings',
-        source: 'composite', 'source-layer': 'building',
-        filter: ['==', 'extrude', 'true'],
-        type: 'fill-extrusion',
-        minzoom: 14,
-        paint: {
-          'fill-extrusion-color': dark ? '#1e2d3d' : '#c8d6e0',
-          'fill-extrusion-height': [
-            'interpolate', ['linear'], ['zoom'], 14, 0, 14.1, ['get', 'height'],
-          ],
-          'fill-extrusion-base': [
-            'interpolate', ['linear'], ['zoom'], 14, 0, 14.1, ['get', 'min_height'],
-          ],
-          'fill-extrusion-opacity': dark ? 0.85 : 0.5,
-        },
-      }, firstLabelId)
-
-      // ── 혼잡도 막대 소스 + 레이어 ────────────────────────────────────────
-      map.addSource('hgr-bars', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      })
-      map.addLayer({
-        id: 'hgr-bars',
-        type: 'fill-extrusion',
-        source: 'hgr-bars',
-        paint: {
-          'fill-extrusion-color':   ['get', 'color'],
-          'fill-extrusion-height':  ['get', 'height'],
-          'fill-extrusion-base':    0,
-          'fill-extrusion-opacity': 0.88,
-          'fill-extrusion-vertical-gradient': true,
-          // Mapbox 내장 트랜지션으로 부드럽게 성장
-          'fill-extrusion-height-transition':  { duration: 900, delay: 80 },
-          'fill-extrusion-opacity-transition': { duration: 600, delay: 0 },
-        },
-      }, firstLabelId)
-
-      // ── 경로 발광 레이어 ──────────────────────────────────────────────────
-      map.addSource('hgr-route-glow', {
-        type: 'geojson',
-        data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
-      })
-      map.addLayer({
-        id: 'hgr-route-glow',
-        type: 'line', source: 'hgr-route-glow',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': planColor, 'line-width': 16, 'line-opacity': 0.14, 'line-blur': 8 },
-      })
-
-      // ── 경로 메인 라인 ────────────────────────────────────────────────────
-      map.addSource('hgr-route', {
-        type: 'geojson',
-        data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
-      })
-      map.addLayer({
-        id: 'hgr-route',
-        type: 'line', source: 'hgr-route',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color':     planColor,
-          'line-width':     5,
-          'line-opacity':   0.92,
-          'line-dasharray': routeStrokeStyle === 'longdash' ? [4, 2] : [1],
-        },
-      })
+      addCustomLayers(map, dark, planColor, routeStrokeStyle)
 
       // 지도 이동 완료 시 현재 중심 좌표 전달
       if (onCenterChange) {
@@ -347,6 +351,23 @@ export default function MapboxView({
     ro.observe(containerRef.current)
     return () => ro.disconnect()
   }, [ready])
+
+  // ── 다크모드 토글 → 지도 스타일 전환 ────────────────────────────────────────
+  // setStyle()은 이전 스타일의 커스텀 레이어/소스를 모두 제거하므로,
+  // style.load 이후 addCustomLayers로 재생성 + styleVersion을 올려 데이터 재주입 유도
+  useEffect(() => {
+    const map = mapRef.current
+    // 마운트 시점엔 ready가 아직 false(맵 load 이벤트 전)라 여기서 자연히 걸러지므로
+    // 별도의 "최초 1회 스킵" 플래그가 필요 없다 — 그런 플래그를 두면 ready가
+    // deps에 없어 정작 처음 토글할 때 조건이 어긋나 버린다
+    if (!ready || !map) return
+
+    map.setStyle(styleUrl(dark))
+    map.once('style.load', () => {
+      addCustomLayers(map, dark, planColor, routeStrokeStyle)
+      setStyleVersion((v) => v + 1)
+    })
+  }, [dark]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 관광지 Callout 카드 마커 생성 ───────────────────────────────────────
   const CALLOUT_MIN_ZOOM = 13  // 이 줌 레벨 미만에서는 카드 숨김
@@ -429,7 +450,7 @@ export default function MapboxView({
       map.setPaintProperty('hgr-bars', 'fill-extrusion-height', ['get', 'height'])
       map.setPaintProperty('hgr-bars', 'fill-extrusion-opacity', 0.88)
     }))
-  }, [ready, congestionBars])
+  }, [ready, congestionBars, styleVersion])
 
   // ── 노드 HTML 마커 업데이트 ────────────────────────────────────────────────
   useEffect(() => {
@@ -474,7 +495,7 @@ export default function MapboxView({
     map.setPaintProperty('hgr-route-glow', 'line-color', planColor)
     map.setPaintProperty('hgr-route', 'line-dasharray',
       routeStrokeStyle === 'longdash' ? [4, 2] : [1])
-  }, [ready, routeNodes, routePath, planColor, routeStrokeStyle])
+  }, [ready, routeNodes, routePath, planColor, routeStrokeStyle, styleVersion])
 
   // ── fitBounds ─────────────────────────────────────────────────────────────
   useEffect(() => {

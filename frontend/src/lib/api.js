@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-const client = axios.create({ baseURL: '/api' })
+// timeout 없으면 백엔드가 응답 없이 걸릴 때 SearchingPage가 무한 대기에 빠진다
+const client = axios.create({ baseURL: '/api', timeout: 30000 })
 
 export const api = {
   recommend(params) {
