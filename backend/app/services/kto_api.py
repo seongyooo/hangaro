@@ -1,8 +1,12 @@
 import json
+import logging
 from pathlib import Path
 
 import httpx
+from fastapi import HTTPException
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 BASE = settings.KTO_BASE_URL
 KEY  = settings.KTO_API_KEY
@@ -12,6 +16,23 @@ COMMON = {
     "_type": "json",
     "serviceKey": KEY,
 }
+
+
+async def _get_json(client: httpx.AsyncClient, url: str, params: dict) -> dict:
+    """KTO API 공통 호출 — 네트워크/HTTP 오류를 502로 변환해 원인 파악 가능하게 함"""
+    try:
+        r = await client.get(url, params=params)
+        r.raise_for_status()
+        return r.json()
+    except httpx.HTTPStatusError as e:
+        logger.warning(f"KTO API 오류 응답 [{url}]: {e.response.status_code}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"관광공사 API 호출 실패 ({e.response.status_code}). 활용신청 승인 상태를 확인하세요.",
+        ) from e
+    except httpx.HTTPError as e:
+        logger.warning(f"KTO API 연결 실패 [{url}]: {e}")
+        raise HTTPException(status_code=502, detail="관광공사 API 연결에 실패했습니다.") from e
 
 # 지역/시군구 코드 테이블 (엑셀 원본 → area_codes.json 변환본)
 _AREA_CODES: list[dict] = json.loads(
@@ -57,55 +78,65 @@ def find_sigungu(sigungu_name: str) -> dict | None:
     return _SIGUNGU_INDEX.get(sigungu_name)
 
 
+def _extract_items(body: dict) -> list[dict]:
+    """KTO 응답 items 파싱 — 결과 0건이면 item이 dict가 아니라 빈 문자열(\"\")로 옴"""
+    items = body.get("items")
+    if not items or not isinstance(items, dict):
+        return []
+    item = items.get("item")
+    if not item:
+        return []
+    return item if isinstance(item, list) else [item]
+
+
 async def get_spots_by_area(area_code: str, content_type_id: int = 12) -> list[dict]:
-    """areaBasedList — 지역 기반 관광지 목록"""
+    """areaBasedList2 — 지역 기반 관광지 목록
+
+    KorService2에서 areaCode는 비활성 파라미터(응답 0건)라 lDongRegnCd(법정동 시도코드)로 대체.
+    시도 코드 값 자체는 기존 areaCd와 동일(서울=11 등)이라 area_codes.json 매핑을 그대로 재사용 가능.
+    """
     async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{BASE}/areaBasedList1",
-            params={**COMMON, "numOfRows": 100, "pageNo": 1,
-                    "areaCode": area_code, "contentTypeId": content_type_id},
+        data = await _get_json(
+            client, f"{BASE}/areaBasedList2",
+            {**COMMON, "numOfRows": 100, "pageNo": 1, "arrange": "C",
+             "lDongRegnCd": area_code, "contentTypeId": content_type_id},
         )
-        r.raise_for_status()
-        items = r.json()["response"]["body"]["items"]["item"]
-        return items if isinstance(items, list) else [items]
+        return _extract_items(data["response"]["body"])
 
 
 async def get_spots_by_location(lat: float, lng: float, radius: int = 3000) -> list[dict]:
-    """locationBasedList — 현재 위치 기반 주변 관광지"""
+    """locationBasedList2 — 현재 위치 기반 주변 관광지"""
     async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{BASE}/locationBasedList1",
-            params={**COMMON, "numOfRows": 50, "pageNo": 1,
-                    "mapX": lng, "mapY": lat, "radius": radius},
+        data = await _get_json(
+            client, f"{BASE}/locationBasedList2",
+            {**COMMON, "numOfRows": 50, "pageNo": 1, "arrange": "C",
+             "mapX": lng, "mapY": lat, "radius": radius},
         )
-        r.raise_for_status()
-        items = r.json()["response"]["body"]["items"]["item"]
-        return items if isinstance(items, list) else [items]
+        return _extract_items(data["response"]["body"])
 
 
 async def get_detail_common(content_id: str) -> dict:
-    """detailCommon — 운영시간, 입장료 등 공통 정보"""
+    """detailCommon2 — 운영시간, 입장료 등 공통 정보"""
     async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{BASE}/detailCommon1",
-            params={**COMMON, "contentId": content_id,
-                    "defaultYN": "Y", "addrinfoYN": "Y", "overviewYN": "Y"},
+        data = await _get_json(
+            client, f"{BASE}/detailCommon2",
+            {**COMMON, "contentId": content_id,
+             "defaultYN": "Y", "addrinfoYN": "Y", "overviewYN": "Y"},
         )
-        r.raise_for_status()
-        return r.json()["response"]["body"]["items"]["item"][0]
+        items = _extract_items(data["response"]["body"])
+        if not items:
+            raise HTTPException(status_code=404, detail=f"관광지 정보를 찾을 수 없습니다: {content_id}")
+        return items[0]
 
 
 async def search_keyword(keyword: str, area_code: str = "") -> list[dict]:
-    """searchKeyword — 키워드 검색"""
+    """searchKeyword2 — 키워드 검색"""
+    params = {**COMMON, "numOfRows": 20, "pageNo": 1, "arrange": "C", "keyword": keyword}
+    if area_code:
+        params["lDongRegnCd"] = area_code
     async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{BASE}/searchKeyword1",
-            params={**COMMON, "numOfRows": 20, "pageNo": 1,
-                    "keyword": keyword, "areaCode": area_code},
-        )
-        r.raise_for_status()
-        items = r.json()["response"]["body"]["items"]["item"]
-        return items if isinstance(items, list) else [items]
+        data = await _get_json(client, f"{BASE}/searchKeyword2", params)
+        return _extract_items(data["response"]["body"])
 
 
 async def get_concentration_rate(

@@ -49,7 +49,7 @@ async def get_congestion(
     3차: 정적 패턴 폴백
     """
     cache_key = f"congestion:{spot_id}:{dt.strftime('%Y%m%d%H')}"
-    cached = await redis_client.get(cache_key)
+    cached = await _redis_get_safe(cache_key)
     if cached:
         return float(cached)
 
@@ -63,8 +63,24 @@ async def get_congestion(
     if score is None:
         score = _calc_static_score(category, dt)
 
-    await redis_client.setex(cache_key, settings.CONGESTION_TTL, str(score))
+    await _redis_setex_safe(cache_key, settings.CONGESTION_TTL, str(score))
     return score
+
+
+async def _redis_get_safe(key: str) -> str | None:
+    """Redis 장애 시에도 서비스가 죽지 않도록 방어 (캐시 없이 계속 진행)"""
+    try:
+        return await redis_client.get(key)
+    except Exception as e:
+        logger.warning(f"Redis 조회 실패, 캐시 없이 진행: {e}")
+        return None
+
+
+async def _redis_setex_safe(key: str, ttl: int, value: str) -> None:
+    try:
+        await redis_client.setex(key, ttl, value)
+    except Exception as e:
+        logger.warning(f"Redis 저장 실패, 무시하고 진행: {e}")
 
 
 async def _get_kt_congestion(

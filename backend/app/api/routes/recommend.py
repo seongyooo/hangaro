@@ -1,5 +1,5 @@
 from datetime import datetime
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.schemas.spot import RouteRequest, RouteResponse
 from app.services.recommender import recommend_free, recommend_fixed_destination
@@ -13,6 +13,9 @@ async def create_recommendation(req: RouteRequest):
     dt = datetime.fromisoformat(f"{req.date}T{req.start_time}")
     region_code = get_area_code(req.region)   # area_codes.json 기반 정확한 코드 사용
 
-    if req.destination_id:
-        return await recommend_fixed_destination(region_code, req.destination_id, dt, req.n_stops)
-    return await recommend_free(region_code, dt, req.n_stops)
+    try:
+        if req.destination_id:
+            return await recommend_fixed_destination(region_code, req.destination_id, dt, req.n_stops)
+        return await recommend_free(region_code, dt, req.n_stops)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e

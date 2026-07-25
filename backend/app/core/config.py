@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # KTO OpenAPI
     KTO_API_KEY: str = ""
-    KTO_BASE_URL: str = "http://apis.data.go.kr/B551011/KorService1"
+    KTO_BASE_URL: str = "https://apis.data.go.kr/B551011/KorService2"
     TATS_BASE_URL: str = "https://apis.data.go.kr/B551011/TatsCnctrRateService"
 
     # Database
